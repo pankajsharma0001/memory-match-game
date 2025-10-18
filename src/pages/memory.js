@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/router";
 
 const EMOJIS = [
   "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮",
@@ -23,6 +24,8 @@ function shuffle(array) {
 }
 
 export default function MemoryMatch({ mode = "single", difficulty = "easy", onBack }) {
+  const router = useRouter();
+  
   // Audio references
   const bgMusic = useRef(null);
   const flipSound = useRef(null);
@@ -52,6 +55,11 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
 
   // Particle container ref for bursts
   const particleContainer = useRef(null);
+
+  // Name prompt states
+  const [showNamePrompt, setShowNamePrompt] = useState(false);
+  const [playerName, setPlayerName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   // Load best scores
   useEffect(() => {
@@ -208,6 +216,8 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
             localStorage.setItem("memory_best", JSON.stringify(updated));
           }
         }
+        // 🟢 Ask for name when win
+        setTimeout(() => setShowNamePrompt(true), 800);
       }
 
       setTimeout(() => setShowModal(true), 1000);
@@ -452,25 +462,87 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
 
         {/* Game Over Modal */}
         {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
-            <div className="bg-white rounded-lg p-6 w-80 sm:w-96 text-center text-gray-900 animate-scale-in">
-              <h2 className="text-2xl font-bold mb-2">
-                {mode==="two"
-                  ? winner==="draw"
-                    ? "🤝 Draw!"
-                    : winner==="red"
-                      ? "🏆 🔴 Red Wins!"
-                      : "🏆 🔵 Blue Wins!"
-                  : "🎉 You Won!"}
-              </h2>
-              <p className="mb-4 text-sm opacity-90">Moves: {moves} • Time: {formatTime(seconds)}</p>
-              <div className="flex justify-center gap-3">
-                <button onClick={restart} className="bg-indigo-600 text-white px-4 py-2 rounded font-medium shadow hover:bg-indigo-700 transition">Play Again</button>
-                <button onClick={handleBack} className="bg-red-600 text-white px-4 py-2 rounded font-medium shadow hover:bg-red-700 transition">Exit to Menu</button>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
+          <div className="bg-white rounded-lg p-6 w-80 sm:w-96 text-center text-gray-900 animate-scale-in">
+            <h2 className="text-2xl font-bold mb-2">
+              {mode === "two"
+                ? winner === "draw"
+                  ? "🤝 Draw!"
+                  : winner === "red"
+                    ? "🏆 🔴 Red Wins!"
+                    : "🏆 🔵 Blue Wins!"
+                : "🎉 You Won!"}
+            </h2>
+
+            <p className="mb-2 text-sm opacity-90">Moves: {moves} • Time: {formatTime(seconds)}</p>
+
+            {/* Name input for single player */}
+            {mode === "single" && (
+              <>
+                <p className="text-sm mb-2">Enter your name for the leaderboard:</p>
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value.slice(0, 15))}
+                  placeholder="Your name"
+                  className="w-full px-3 py-2 border rounded mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </>
+            )}
+
+            <div className="flex flex-col sm:flex-row justify-center gap-3 mt-2">
+              {/* Submit button for single player */}
+              {mode === "single" && (
+                <button
+                  onClick={async () => {
+                    if (!playerName.trim() || submitting) return;
+                    setSubmitting(true);
+                    try {
+                      const res = await fetch("/api/leaderboard", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          player: playerName.trim(),
+                          difficulty: selectedDifficulty,
+                          moves,
+                          time: seconds,
+                        }),
+                      });
+                      if (!res.ok) throw new Error("Failed to submit score");
+                      router.push("/leaderboard");
+                      
+                    } catch (err) {
+                      alert("Could not save your score. Please try again!");
+                      console.error(err);
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700 transition"
+                >
+                  {submitting ? "Submitting..." : "Submit"}
+                </button>
+              )}
+
+              {/* Play Again button */}
+              <button
+                onClick={restart}
+                className="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700 transition"
+              >
+                Play Again
+              </button>
+
+              {/* Exit button */}
+              <button
+                onClick={handleBack}
+                className="bg-red-600 text-white px-4 py-2 rounded font-medium hover:bg-red-700 transition"
+              >
+                Exit to Menu
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
       </div>
 
       {/* Styles for gradient, sparkles, particles */}

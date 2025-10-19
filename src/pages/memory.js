@@ -1,3 +1,4 @@
+// pages/memory.js
 import { useEffect, useMemo, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/router";
@@ -23,7 +24,17 @@ function shuffle(array) {
   return a;
 }
 
-export default function MemoryMatch({ mode = "single", difficulty = "easy", onBack }) {
+export default function MemoryMatch({
+  mode = "single",
+  difficulty = "easy",
+  onBack,
+  socket = null,
+  roomId = null,
+  isMyTurn = false,
+  setIsMyTurn = () => {},
+  isHost = false,
+  gameStarted = false, // <-- ensure this prop exists and defaults to false
+}) {
   const router = useRouter();
   
   // Audio references
@@ -83,8 +94,10 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
 
     // Cleanup on unmount
     return () => {
-      bgMusic.current.pause();
-      bgMusic.current.currentTime = 0;
+      try {
+        bgMusic.current.pause();
+        bgMusic.current.currentTime = 0;
+      } catch (e) {}
     };
   }, []);
 
@@ -108,6 +121,11 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
       uuid: cryptoRandomId(),
     }));
     setCards(deck);
+
+    if (mode === "online" && socket && roomId && isHost) {
+      socket.emit("deckReady", { roomId, deck, hostId: socket.id });
+    }
+
     setFlipped([]);
     setMatchedIds(new Set());
     setMoves(0);
@@ -121,17 +139,111 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
     setShowModal(false);
   };
 
+  // Non-online modes create deck immediately (single/two)
   useEffect(() => {
-    createDeck();
+    if (mode !== "online") {
+      createDeck();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDifficulty]);
+  }, [selectedDifficulty, mode]);
+
+  // When a deck is received from the host (non-host clients)
+  useEffect(() => {
+  if (mode !== "online" || !socket) return;
+
+  const onDeckReady = ({ deck, hostId } = {}) => {
+    console.log("[MemoryMatch] deckReady received", { deckLength: deck?.length, hostId });
+    if (!deck || !Array.isArray(deck)) return;
+    setCards(deck);
+    setFlipped([]); 
+    setMatchedIds(new Set());
+    setMoves(0);
+    setSeconds(0);
+    setStarted(false);
+    setDisabled(false);
+    setPlayerScores({ 1: 0, 2: 0 });
+    const iAmHost = socket.id === hostId;
+    setIsMyTurn(iAmHost);
+    setCurrentPlayer(iAmHost ? 1 : 2);
+  };
+
+  socket.on("deckReady", onDeckReady);
+  return () => socket.off("deckReady", onDeckReady);
+}, [mode, socket]);
+
+  // Host: wait for the server 'startGame' (or gameStarted prop) before creating deck.
+  useEffect(() => {
+    if (mode !== "online") return;
+    if (!socket) {
+      console.log("[MemoryMatch] waiting for socket...");
+      return;
+    }
+    if (!isHost) {
+      console.log("[MemoryMatch] non-host waiting for deckReady");
+      setCards([]); // blank until deck arrives
+      return;
+    }
+    if (!roomId) {
+      console.log("[MemoryMatch] host waiting for roomId...");
+      return;
+    }
+
+    // If the parent already passed gameStarted true (onlineGame received startGame),
+    // create deck now.
+    if (gameStarted) {
+      console.log("[MemoryMatch] gameStarted prop true — host creating deck for room", roomId);
+      createDeck();
+      setIsMyTurn(true);
+      return;
+    }
+
+    // Otherwise, listen for server 'startGame' and create deck once it arrives.
+    const onStart = ({ room: r, firstPlayer: fp } = {}) => {
+      if (r !== roomId) return;
+      console.log("[MemoryMatch] startGame received for room", r, "firstPlayer:", fp);
+      createDeck();
+      setIsMyTurn(socket.id === fp);
+    };
+    socket.on("startGame", onStart);
+
+    // ensure cleanup
+    return () => {
+      if (socket) socket.off("startGame", onStart);
+    };
+    // include selectedDifficulty so if host changes difficulty before start it still works
+  }, [mode, socket, isHost, roomId, selectedDifficulty, gameStarted]);
 
   useEffect(() => {
-    if (started && timerRef.current === null) {
+    if (!started) return;
+
+    // Start timer for both local & online
+    if (mode === "online" && socket && socket.connected && isMyTurn) {
+      timerRef.current = setInterval(() => {
+        setSeconds((s) => {
+          const newSec = s + 1;
+          socket.emit("timerUpdate", { roomId, seconds: newSec });
+          return newSec;
+        });
+      }, 1000);
+    } else {
+      // Local single or two-player mode
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
-    return () => stopTimer();
-  }, [started]);
+
+    // Only listen if socket exists and connected
+    if (mode === "online" && socket && socket.connected) {
+      socket.on("timerUpdate", ({ seconds }) => setSeconds(seconds));
+    }
+
+    return () => {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+
+      if (mode === "online" && socket && socket.connected) {
+        socket.off("timerUpdate");
+      }
+    };
+  }, [started, mode, isMyTurn, socket, roomId]);
 
   const stopTimer = () => {
     if (timerRef.current !== null) {
@@ -193,6 +305,7 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
       stopTimer();
       winSound.current?.play();
 
+      // Two Player Mode Logic
       if (mode === "two") {
         let roundWinner = null;
         if (playerScores[1] > playerScores[2]) roundWinner = "red";
@@ -204,6 +317,7 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
         setWinner(roundWinner ? roundWinner : "draw");
       }
 
+      // Single Player Mode Logic
       if (mode === "single") {
         const prev = bestScores[selectedDifficulty];
         const current = { moves, time: seconds };
@@ -216,62 +330,288 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
             localStorage.setItem("memory_best", JSON.stringify(updated));
           }
         }
-        // 🟢 Ask for name when win
+        // Ask for player name
         setTimeout(() => setShowNamePrompt(true), 800);
       }
 
+      // Online Multiplayer Mode Logic
+      if (mode === "online" && socket && roomId) {
+        socket.emit("gameOver", {
+          roomId,
+          winnerId: socket.id,
+          winnerScore: playerScores, // optional
+        });
+        setWinner("you");
+      }
+
+      // Show result modal
       setTimeout(() => setShowModal(true), 1000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchedIds, cards, moves, seconds]);
 
   const handleFlip = (index) => {
-    if (disabled || flipped.includes(index) || matchedIds.has(cards[index].uuid)) return;
+    if (index == null || !cards[index]) return;
+
+    // Prevent flipping invalid cards
+    if (disabled || flipped.includes(index) || matchedIds.has(cards[index]?.uuid)) return;
+    if (mode === "online" && !isMyTurn) return; // only your turn
 
     if (!started) setStarted(true);
-    flipSound.current?.play();
-    const newFlipped = [...flipped, index];
-    setFlipped(newFlipped);
 
+    const newFlipped = [...flipped, index];
+
+    if (newFlipped.length === 2 && newFlipped[0] === newFlipped[1]) {
+      setFlipped([newFlipped[0]]);
+      return;
+    }
+
+    setFlipped(newFlipped);
+    flipSound.current?.play();
+
+    // EMIT CARD FLIP TO OPPONENT - FOR EVERY FLIP
+    if (mode === "online" && socket && roomId) {
+      socket.emit("cardFlip", { 
+        roomId, 
+        flippedIndex: index,
+        cardId: cards[index].id,
+        senderId: socket.id 
+      });
+    }
+
+    // Once two cards are flipped → check for match
     if (newFlipped.length === 2) {
       setDisabled(true);
-      setMoves((m) => m + 1);
-      const [i1, i2] = newFlipped;
-      const c1 = cards[i1];
-      const c2 = cards[i2];
 
-      if (c1.emoji === c2.emoji) {
-        setTimeout(() => {
-          setMatchedIds((prev) => new Set(prev).add(c1.uuid).add(c2.uuid));
-          setFlipped([]);
-          setDisabled(false);
-          matchSound.current?.play();
-
-          // compute a good central point to spawn particles: use bounding rects of the two cards
-          const el1 = document.querySelector(`[data-card-uuid="${c1.uuid}"]`);
-          const el2 = document.querySelector(`[data-card-uuid="${c2.uuid}"]`);
-          if (el1 && el2 && particleContainer.current) {
-            const r1 = el1.getBoundingClientRect();
-            const r2 = el2.getBoundingClientRect();
-            const centerX = (r1.left + r1.right + r2.left + r2.right) / 4;
-            const centerY = (r1.top + r1.bottom + r2.top + r2.bottom) / 4;
-            spawnParticles(centerX, centerY);
-          }
-
-          if (mode === "two") {
-            setPlayerScores((prev) => ({ ...prev, [currentPlayer]: prev[currentPlayer] + 1 }));
-          }
-        }, 600);
-      } else {
-        setTimeout(() => {
-          setFlipped([]);
-          setDisabled(false);
-          mismatchSound.current?.play();
-          if (mode === "two") setCurrentPlayer(currentPlayer === 1 ? 2 : 1);
-        }, 900);
-      }
+      // Now handle the match logic - DON'T emit playerMove here anymore
+      handleMatchCheck(newFlipped);
     }
   };
+
+  const handleMatchCheck = (newFlipped) => {
+  const [i1, i2] = newFlipped;
+
+  if (i1 == null || i2 == null || i1 === i2) {
+    setTimeout(() => {
+      setFlipped([]);
+      setDisabled(false);
+
+      if (mode === "online" && socket && roomId) {
+        socket.emit("resetFlipped", { roomId, senderId: socket.id });
+      }
+    }, 400);
+    return;
+  }
+
+  const c1 = cards[i1], c2 = cards[i2];
+
+  if (!c1 || !c2) {
+    setTimeout(() => {
+      setFlipped([]);
+      setDisabled(false);
+
+      if (mode === "online" && socket && roomId) {
+        socket.emit("resetFlipped", { roomId, senderId: socket.id });
+      }
+    }, 400);
+    return;
+  }
+
+  const isMatch = c1?.emoji === c2?.emoji;
+
+  // Increment moves
+  setMoves((m) => m + 1);
+
+  // Handle local updates first
+  if (isMatch) {
+    setMatchedIds((prev) => {
+      const ns = new Set(prev);
+      ns.add(c1.uuid);
+      ns.add(c2.uuid);
+      return ns;
+    });
+
+    setFlipped([]);
+    matchSound.current?.play();
+    setDisabled(false);
+
+    // Update scores for two-player mode
+    if (mode === "two") {
+      setPlayerScores(prev => ({
+        ...prev,
+        [currentPlayer]: prev[currentPlayer] + 1
+      }));
+    }
+
+    // EMIT MATCH TO OPPONENT - MOVED HERE FOR BETTER TIMING
+    if (mode === "online" && socket && roomId) {
+      const nextMatched = Array.from(new Set([...Array.from(matchedIds), c1.uuid, c2.uuid]));
+      
+      socket.emit("cardMatch", {
+        roomId,
+        matchedIds: nextMatched,
+        senderId: socket.id,
+      });
+
+      socket.emit("matchCheck", {
+        roomId,
+        matched: nextMatched,
+        flipped: [],
+        moves: moves + 1,
+        isMatch: true,
+        senderId: socket.id,
+      });
+    }
+  } else {
+    setTimeout(() => {
+      setFlipped([]);
+      mismatchSound.current?.play();
+
+      // Swap turns for 2-player local
+      if (mode === "two") {
+        setCurrentPlayer((p) => (p === 1 ? 2 : 1));
+      }
+
+      // In online mode, tell opponent to take turn
+      if (mode === "online" && socket && roomId) {
+        socket.emit("turnChange", { roomId, senderId: socket.id });
+        setIsMyTurn(false);
+        
+        // Also emit the mismatch result
+        socket.emit("matchCheck", {
+          roomId,
+          matched: Array.from(matchedIds),
+          flipped: [],
+          moves: moves + 1,
+          isMatch: false,
+          senderId: socket.id,
+        });
+      }
+
+      setDisabled(false);
+    }, 800);
+  }
+};
+
+  // Online event listeners - FIXED VERSION
+  useEffect(() => {
+    if (mode !== "online" || !socket || !roomId) return;
+    if (!socket.connected) return;
+
+    // Handle individual card flips from opponent
+    const onCardFlip = ({ flippedIndex, cardId, senderId } = {}) => {
+      if (senderId && socket && senderId === socket.id) return;
+      
+      console.log("[MemoryMatch] opponent flipped card:", flippedIndex, cardId);
+      
+      // Flip the same card on our screen
+      setFlipped(prev => {
+        // Don't add if already flipped or matched
+        if (prev.includes(flippedIndex) || matchedIds.has(cards[flippedIndex]?.uuid)) {
+          return prev;
+        }
+        return [...prev, flippedIndex];
+      });
+
+      flipSound.current?.play();
+    };
+
+    const onCardMatch = ({ matchedIds: newMatchedIds, senderId } = {}) => {
+      if (senderId && socket && senderId === socket.id) return;
+      
+      console.log("[MemoryMatch] opponent matched cards:", newMatchedIds);
+      setMatchedIds(new Set(newMatchedIds || []));
+      matchSound.current?.play();
+    };
+
+    const onResetFlipped = ({ senderId } = {}) => {
+      if (senderId && socket && senderId === socket.id) return;
+      
+      console.log("[MemoryMatch] opponent reset flipped cards");
+      setFlipped([]);
+      mismatchSound.current?.play();
+    };
+
+    // When opponent flips cards
+    const onPlayerMove = ({ flipped: newFlipped = [], senderId } = {}) => {
+      if (senderId && socket && senderId === socket.id) return;
+
+      console.log("[MemoryMatch] onPlayerMove received", newFlipped, "from", senderId);
+      setFlipped(newFlipped || []);
+      flipSound.current?.play();
+
+      if ((newFlipped || []).length > 0) {
+        setDisabled(true);
+      }
+    };
+
+    const onMatchCheck = ({ matched = [], flipped: newFlipped = [], moves: newMoves = 0, isMatch, senderId } = {}) => {
+      if (senderId && socket && senderId === socket.id) return;
+
+      console.log("[MemoryMatch] onMatchCheck", { isMatch, matched });
+
+      setMatchedIds(new Set(matched || []));
+      setFlipped(newFlipped || []);
+      setMoves(newMoves || 0);
+
+      if (isMatch) {
+        setIsMyTurn(false);
+        setDisabled(true);
+      } else {
+        setIsMyTurn(true);
+        setDisabled(false);
+      }
+    };
+
+    socket.on("cardFlip", onCardFlip);
+    socket.on("cardMatch", onCardMatch);
+    socket.on("resetFlipped", onResetFlipped);
+    socket.on("playerMove", onPlayerMove);
+    socket.on("matchCheck", onMatchCheck);
+    socket.on("turnChange", ({ senderId }) => {
+      if (senderId && senderId === socket.id) return;
+      setIsMyTurn(true);
+      setDisabled(false);
+    });
+
+    socket.on("timerUpdate", ({ seconds } = {}) => {
+      setSeconds(seconds);
+    });
+
+    socket.on("gameOver", ({ winner } = {}) => {
+      setShowModal(true);
+      setWinner(winner === socket.id ? "you" : "opponent");
+    });
+
+    return () => {
+      if (!socket) return;
+      socket.off("cardFlip", onCardFlip);
+      socket.off("cardMatch", onCardMatch);
+      socket.off("resetFlipped", onResetFlipped);
+      socket.off("playerMove", onPlayerMove);
+      socket.off("matchCheck", onMatchCheck);
+      socket.off("turnChange");
+      socket.off("timerUpdate");
+      socket.off("gameOver");
+    };
+  }, [mode, socket, roomId, cards, matchedIds]); // ADDED cards and matchedIds dependencies
+
+  useEffect(() => {
+    if (mode !== "online" || !socket) return;
+
+    socket.on("gameOver", ({ winner } = {}) => {
+      setShowModal(true);
+      if (winner === socket.id) {
+        setWinner("you");
+      } else {
+        setWinner("opponent");
+      }
+    });
+
+    return () => {
+      socket.off("gameOver");
+    };
+  }, [mode, socket]);
 
   const restart = () => {
     createDeck();
@@ -283,8 +623,10 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
   };
 
   const handleBack = () => {
-    bgMusic.current.pause();
-    bgMusic.current.currentTime = 0;
+    try {
+      bgMusic.current.pause();
+      bgMusic.current.currentTime = 0;
+    } catch (e) {}
     onBack();
   };
 
@@ -301,17 +643,14 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
     return "w-[70px] h-[70px] sm:w-[75px] sm:h-[75px] md:w-20 md:h-20 lg:w-24 lg:h-24";
   }, [selectedDifficulty]);
 
-  // Decide bg color for header area (keeps your original logic)
   const bgColor = "bg-transparent";
 
   return (
     <div className={`relative h-screen flex items-center justify-center p-2 text-white overflow-hidden`}>
-      {/* Animated gradient background (behind everything) */}
       <div className="absolute inset-0 -z-20">
         <div className="w-full h-full animate-gradient bg-[length:200%_200%] rounded-md"></div>
       </div>
 
-      {/* Floating sparkles (subtle decorative) */}
       <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden">
         {[...Array(20)].map((_, i) => {
           const style = {
@@ -325,11 +664,9 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
         })}
       </div>
 
-      {/* Particle burst container */}
       <div ref={particleContainer} className="absolute inset-0 pointer-events-none -z-5"></div>
 
       <div className={`w-full h-full max-w-5xl flex flex-col justify-between ${bgColor} transition-colors duration-500`}>
-        {/* Header */}
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3">
           <div className="flex items-center justify-between w-full sm:w-auto">
             <div>
@@ -347,8 +684,8 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
                   className="flex gap-4 justify-center px-4 py-2 rounded-2xl"
                   style={{
                     background: currentPlayer === 1 
-                      ? "rgba(248, 113, 113, 0.25)"  // red translucent
-                      : "rgba(59, 130, 246, 0.25)",  // blue translucent
+                      ? "rgba(248, 113, 113, 0.25)"
+                      : "rgba(59, 130, 246, 0.25)",
                     backdropFilter: "blur(8px)",
                     minWidth: "180px",
                   }}
@@ -366,7 +703,6 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
 
             {mode === "single" && (
               <div className="relative">
-                {/* Selected difficulty button */}
                 <button
                   onClick={() => setOpenDropdown((prev) => !prev)}
                   className="relative w-36 bg-white/15 backdrop-blur-md text-white font-semibold rounded-lg px-3 py-2 text-sm shadow-lg border border-white/30 hover:bg-white/25 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-pink-300 focus:scale-105 flex items-center justify-between"
@@ -377,7 +713,6 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
                   <span className="text-white/80 text-xs">▼</span>
                 </button>
 
-                {/* Animated dropdown menu */}
                 <AnimatePresence>
                   {openDropdown && (
                     <motion.ul
@@ -409,7 +744,6 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
                   )}
                 </AnimatePresence>
 
-                {/* Glowing animated gradient border */}
                 <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 animate-gradient-x opacity-50 blur-sm pointer-events-none"></div>
               </div>
             )}
@@ -422,7 +756,6 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
           </div>
         </header>
 
-        {/* Game Grid */}
         <section className={`grid ${gridCols} gap-1.5 sm:gap-2 md:gap-3 justify-items-center content-center flex-1 [perspective:1200px] my-1 ${selectedDifficulty === "hard" ? "max-w-[360px] sm:max-w-[500px] md:max-w-none mx-auto" : ""}`}>
           {cards.map((card, idx) => {
             const isFlipped = flipped.includes(idx) || matchedIds.has(card.uuid);
@@ -444,7 +777,6 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
           })}
         </section>
 
-        {/* Footer */}
         <footer className="flex items-center justify-between text-xs mt-2 sm:mt-0">
           {mode === "single" ? (
             <div>
@@ -460,23 +792,27 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
           <div className="opacity-80 text-right">Made with ❤️</div>
         </footer>
 
-        {/* Game Over Modal */}
         {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
           <div className="bg-white rounded-lg p-6 w-80 sm:w-96 text-center text-gray-900 animate-scale-in">
             <h2 className="text-2xl font-bold mb-2">
-              {mode === "two"
-                ? winner === "draw"
-                  ? "🤝 Draw!"
-                  : winner === "red"
-                    ? "🏆 🔴 Red Wins!"
-                    : "🏆 🔵 Blue Wins!"
-                : "🎉 You Won!"}
+              {mode === "online"
+                ? winner === "you"
+                  ? "🏆 You Won!"
+                  : winner === "opponent"
+                    ? "😢 You Lost!"
+                    : "🤝 Draw!"
+                : mode === "two"
+                  ? winner === "draw"
+                    ? "🤝 Draw!"
+                    : winner === "red"
+                      ? "🏆 🔴 Red Wins!"
+                      : "🏆 🔵 Blue Wins!"
+                  : "🎉 You Won!"}
             </h2>
 
             <p className="mb-2 text-sm opacity-90">Moves: {moves} • Time: {formatTime(seconds)}</p>
 
-            {/* Name input for single player */}
             {mode === "single" && (
               <>
                 <p className="text-sm mb-2">Enter your name for the leaderboard:</p>
@@ -491,7 +827,6 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
             )}
 
             <div className="flex flex-col sm:flex-row justify-center gap-3 mt-2">
-              {/* Submit button for single player */}
               {mode === "single" && (
                 <button
                   onClick={async () => {
@@ -510,7 +845,6 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
                       });
                       if (!res.ok) throw new Error("Failed to submit score");
                       router.push("/leaderboard");
-                      
                     } catch (err) {
                       alert("Could not save your score. Please try again!");
                       console.error(err);
@@ -524,7 +858,6 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
                 </button>
               )}
 
-              {/* Play Again button */}
               <button
                 onClick={restart}
                 className="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700 transition"
@@ -532,7 +865,6 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
                 Play Again
               </button>
 
-              {/* Exit button */}
               <button
                 onClick={handleBack}
                 className="bg-red-600 text-white px-4 py-2 rounded font-medium hover:bg-red-700 transition"
@@ -545,9 +877,7 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
       )}
       </div>
 
-      {/* Styles for gradient, sparkles, particles */}
       <style jsx>{`
-        /* animated gradient */
         .animate-gradient {
           background: linear-gradient(120deg, #4f46e5 0%, #7c3aed 35%, #ec4899 70%);
           width: 100%;
@@ -560,40 +890,10 @@ export default function MemoryMatch({ mode = "single", difficulty = "easy", onBa
           50% { background-position: 100% 50%; }
           100% { background-position: 0% 50%; }
         }
-
-        /* sparkles */
-        .mm-sparkle {
-          position: absolute;
-          width: 6px;
-          height: 6px;
-          border-radius: 999px;
-          background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), rgba(255,255,255,0.7) 40%, rgba(255,255,255,0.1) 60%);
-          filter: blur(0.6px);
-          animation: mmFloat 6s linear infinite;
-        }
-        @keyframes mmFloat {
-          0% { transform: translateY(0) scale(1); opacity: 0; }
-          10% { opacity: 0.8; }
-          50% { transform: translateY(-18px) scale(1.05); opacity: 0.9; }
-          100% { transform: translateY(-40px) scale(0.9); opacity: 0; }
-        }
-
-        /* particles (burst) */
-        .mm-particle {
-          position: absolute;
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: radial-gradient(circle at 30% 30%, rgba(255,255,255,1), rgba(255,255,255,0.8) 40%, rgba(255,255,255,0.2) 80%);
-          pointer-events: none;
-          will-change: transform, opacity;
-        }
-
-        /* modal animation (kept simple) */
-        @keyframes scaleIn {
-          from { transform: scale(.96); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
-        }
+        .mm-sparkle { position: absolute; width: 6px; height: 6px; border-radius: 999px; background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), rgba(255,255,255,0.7) 40%, rgba(255,255,255,0.1) 60%); filter: blur(0.6px); animation: mmFloat 6s linear infinite; }
+        @keyframes mmFloat { 0% { transform: translateY(0) scale(1); opacity: 0; } 10% { opacity: 0.8; } 50% { transform: translateY(-18px) scale(1.05); opacity: 0.9; } 100% { transform: translateY(-40px) scale(0.9); opacity: 0; } }
+        .mm-particle { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, rgba(255,255,255,1), rgba(255,255,255,0.8) 40%, rgba(255,255,255,0.2) 80%); pointer-events: none; will-change: transform, opacity; }
+        @keyframes scaleIn { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .animate-scale-in { animation: scaleIn 240ms ease both; }
       `}</style>
     </div>

@@ -1,176 +1,189 @@
-// pages/onlineGame.js
+// pages/onlineGame.js - UPDATED EVENT BINDINGS
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import getSocket from "../lib/socket";
+import { getPusherClient } from "../lib/pusher-client";
 import MemoryMatch from "./memory";
 
 export default function OnlineGame() {
   const router = useRouter();
-  const { room, firstPlayer } = router.query;
+  const { room, firstPlayer, userId } = router.query;
 
-  const [socket, setSocket] = useState(null);
+  const [channel, setChannel] = useState(null);
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [opponentJoined, setOpponentJoined] = useState(false);
   const [opponentDisconnected, setOpponentDisconnected] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    
-    let isMounted = true;
-    
-    const initializeSocket = async () => {
+    if (!room || !userId) return;
+
+    const initializePusher = async () => {
       try {
-        const s = getSocket();
-        if (!s) {
-          if (isMounted) {
-            setIsLoading(false);
-          }
+        const pusher = getPusherClient();
+        if (!pusher) {
+          setIsLoading(false);
           return;
         }
 
-        // Wait for connection
-        if (!s.connected) {
-          await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              reject(new Error("Connection timeout"));
-            }, 3000);
-
-            s.once("connect", () => {
-              clearTimeout(timeout);
-              resolve();
-            });
-
-            s.once("connect_error", (err) => {
-              clearTimeout(timeout);
-              reject(err);
-            });
-          });
-        }
-
-        if (isMounted) {
-          setSocket(s);
+        // Subscribe to room channel
+        const roomChannel = pusher.subscribe(`room-${room}`);
+        
+        roomChannel.bind('pusher:subscription_succeeded', () => {
+          console.log('✅ Subscribed to room:', room);
           setIsLoading(false);
+        });
+
+        // Handle player joined
+        roomChannel.bind('client-player-joined', (data) => {
+          console.log('🎮 Player joined:', data);
+          setOpponentJoined(true);
+          setGameStarted(true);
+          console.log('🚀 Setting gameStarted to TRUE because player joined');
+        });
+
+        roomChannel.bind('client-player-left', (data) => {
+          console.log('👋 Player left:', data);
+          setOpponentDisconnected(true);
+        });
+
+        // Handle turn changes
+        roomChannel.bind('client-turn-change', (data) => {
+          if (data.senderId !== userId) {
+            setIsMyTurn(true);
+          }
+        });
+
+        setChannel(roomChannel);
+
+        // Check room status immediately
+        try {
+          const statusResponse = await fetch(`/api/rooms?room=${room}`);
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            
+            if (statusData.success) {
+              const roomData = statusData.room;
+              console.log('📊 Room status:', roomData);
+              if (roomData.players && roomData.players.length >= 2) {
+                setOpponentJoined(true);
+                setGameStarted(true);
+                console.log('🚀 Game should start - 2 players in room');
+              }
+            }
+          } else {
+            console.warn('⚠️ Room status check failed:', statusResponse.status);
+          }
+        } catch (error) {
+          console.error('❌ Failed to check room status:', error);
         }
-      } catch (err) {
-        console.error("[onlineGame] Socket initialization error:", err);
-        if (isMounted) {
-          setIsLoading(false);
-        }
+
+      } catch (error) {
+        console.error('❌ Pusher initialization error:', error);
+        setIsLoading(false);
       }
     };
 
-    initializeSocket();
+    initializePusher();
 
     return () => {
-      isMounted = false;
+      if (channel) {
+        channel.unbind_all();
+        channel.unsubscribe();
+      }
     };
-  }, []);
+  }, [room, userId]);
 
-  const isHost = socket && firstPlayer && socket.id === String(firstPlayer);
-
+  // FIXED: Improved server-deck-ready handler
   useEffect(() => {
-    if (!socket) return;
-    console.log("[onlineGame] listening for playerJoined/opponentLeft/startGame, room:", room, "firstPlayer:", firstPlayer);
+    if (!channel) return;
 
-    const onPlayerJoined = ({ room: joinedRoom } = {}) => {
-      if (!joinedRoom || joinedRoom === room) {
-        console.log("[onlineGame] playerJoined event received", joinedRoom);
-        setOpponentJoined(true);
-      }
-    };
-    const onOpponentLeft = (payload) => {
-      console.log("[onlineGame] opponentLeft", payload);
-      setOpponentDisconnected(true);
+    const handleServerDeckReady = (data) => {
+      console.log('🎮 Server deck ready received in onlineGame:', data);
+      // Force state update for rematch
+      setGameStarted(true);
+      setOpponentJoined(true);
+      console.log('🔄 Rematch: gameStarted set to TRUE');
     };
 
-    const onStartGame = ({ room: r, firstPlayer: fp } = {}) => {
-      console.log("[onlineGame] startGame", r, fp);
-      if (r && fp) {
-        setGameStarted(true);
-        router.replace({ pathname: "/onlineGame", query: { room: r, firstPlayer: fp } }, undefined, { shallow: true });
-      }
-    };
-
-    socket.on("playerJoined", onPlayerJoined);
-    socket.on("opponentLeft", onOpponentLeft);
-    socket.on("startGame", onStartGame);
+    channel.bind('server-deck-ready', handleServerDeckReady);
 
     return () => {
-      socket.off("playerJoined", onPlayerJoined);
-      socket.off("opponentLeft", onOpponentLeft);
-      socket.off("startGame", onStartGame);
+      channel.unbind('server-deck-ready', handleServerDeckReady);
     };
-  }, [socket, room, firstPlayer, router]);
+  }, [channel]);
 
-  useEffect(() => {
-    if (!socket || !room) return;
+  const isHost = userId === firstPlayer;
 
-    const askStatus = () => {
-      try {
-        socket.emit("roomStatus", { room }, (res) => {
-          if (!res || !res.ok) return;
-          const status = res.status;
-          console.log("[onlineGame] roomStatus", status);
-          if (status.players >= 2) setOpponentJoined(true);
-          if (status.started) setGameStarted(true);
-        });
-      } catch (e) {
-        socket.once("roomStatus", ({ status } = {}) => {
-          if (!status) return;
-          if (status.players >= 2) setOpponentJoined(true);
-          if (status.started) setGameStarted(true);
-        });
-      }
-    };
-
-    if (socket.connected) {
-      askStatus();
-    } else {
-      socket.once("connect", askStatus);
+  // Send game event to opponent
+  const sendGameEvent = (eventType, data) => {
+    if (!channel) {
+      console.warn('❌ No channel available to send event:', eventType);
+      return;
     }
+    
+    console.log('📤 Sending event:', eventType, data);
+    
+    channel.trigger(`client-${eventType}`, {
+      ...data,
+      senderId: userId,
+      room: room,
+      timestamp: Date.now()
+    });
+  };
 
-    return () => {
-      socket.off("connect", askStatus);
-    };
-  }, [socket, room]);
-
-  // FIXED: Move this useEffect to the top level (not nested inside another useEffect)
+  // DEBUG: Log important state changes
   useEffect(() => {
-    if (!socket || !gameStarted) return;
+    console.log('🔄 OnlineGame State:', {
+      room,
+      userId,
+      isHost,
+      gameStarted,
+      opponentJoined,
+      channel: !!channel,
+      isLoading
+    });
+  }, [room, userId, isHost, gameStarted, opponentJoined, channel, isLoading]);
 
-    const onTurnChange = (payload) => {
-      console.log("[onlineGame] turnChanged", payload);
-      setIsMyTurn(true);
-    };
-
-    socket.on("turnChange", onTurnChange);
-
-    return () => {
-      socket.off("turnChange", onTurnChange);
-    };
-  }, [socket, gameStarted]);
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white">
+        <div className="text-xl mb-4">Loading game...</div>
+        <div className="animate-spin">🎮</div>
+      </div>
+    );
+  }
 
   if (opponentDisconnected) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white text-center">
         <h1 className="text-3xl font-bold mb-4">😢 Opponent Disconnected</h1>
-        <button onClick={() => router.push("/memoryHome")} className="bg-white text-indigo-600 px-6 py-3 rounded-lg font-semibold hover:bg-indigo-50 transition">Return to Menu</button>
+        <button onClick={() => router.push("/memoryHome")} className="bg-white text-indigo-600 px-6 py-3 rounded-lg font-semibold hover:bg-indigo-50 transition">
+          Return to Menu
+        </button>
       </div>
     );
   }
 
-  if (!gameStarted) {
+  // FIXED: Improved waiting screen condition with better rematch handling
+  const showWaitingScreen = !gameStarted || !opponentJoined;
+
+  if (showWaitingScreen) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white text-center">
         <h1 className="text-3xl font-bold mb-4">
           {isHost ? "Waiting for Opponent..." : "Waiting for Game Start..."}
         </h1>
         <p className="text-lg">Room Code: <strong>{room}</strong></p>
+        
         <div className="mt-4">
           {isHost ? (
-            <p className="text-sm opacity-90">Share this code with a friend — the game will start when they join.</p>
+            <div>
+              <p className="text-sm opacity-90 mb-2">Share this code with a friend — the game will start when they join.</p>
+              {opponentJoined && (
+                <p className="text-green-300 animate-pulse">✅ Opponent joined! Starting game...</p>
+              )}
+            </div>
           ) : (
             <div>
               <p className="text-sm opacity-90 mb-2">Waiting for host to start the game...</p>
@@ -178,7 +191,10 @@ export default function OnlineGame() {
             </div>
           )}
         </div>
-        <button onClick={() => router.push("/memoryHome")} className="mt-6 text-white/80 hover:text-white">← Exit</button>
+
+        <button onClick={() => router.push("/memoryHome")} className="mt-6 text-white/80 hover:text-white">
+          ← Exit
+        </button>
       </div>
     );
   }
@@ -188,10 +204,12 @@ export default function OnlineGame() {
       mode="online"
       isMyTurn={isMyTurn}
       setIsMyTurn={setIsMyTurn}
-      socket={socket}
+      channel={channel}
       roomId={room}
       isHost={isHost}
+      userId={userId}
       gameStarted={gameStarted}
+      onSendGameEvent={sendGameEvent}
       onBack={() => router.push("/memoryHome")}
     />
   );

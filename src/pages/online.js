@@ -1,120 +1,115 @@
-// pages/online.js
+// pages/online.js - UPDATED FOR PUSHER
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import getSocket from "../lib/socket";
+import { getPusherClient } from "../lib/pusher-client";
 
 export default function Online() {
   const [roomId, setRoomId] = useState("");
   const [error, setError] = useState("");
   const [isConnected, setIsConnected] = useState(false);
   const router = useRouter();
-  const [socket, setSocket] = useState(null);
+  const [pusher, setPusher] = useState(null);
+  const [userId] = useState(() => 
+    Math.random().toString(36).substring(2) + Date.now().toString(36)
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     
-    // Pre-initialize socket server without waiting
-    fetch("/api/socket").catch(() => {});
-
-    const s = getSocket();
-    if (!s) {
-      setError("Socket not available");
+    const pusherClient = getPusherClient();
+    if (!pusherClient) {
+      setError("Real-time service not available");
       return;
     }
 
-    setSocket(s);
-
-    // Simple connection handler
-    const onConnect = () => {
-      console.log("[online.js] socket connected", s.id);
-      setIsConnected(true);
-      setError("");
-    };
-
-    const onConnectError = (err) => {
-      console.error("[online.js] connection error:", err);
-      // Don't set error state - just log it
-    };
-
-    s.on("connect", onConnect);
-    s.on("connect_error", onConnectError);
-
-    // If already connected, set state immediately
-    if (s.connected) {
-      setIsConnected(true);
-    }
-
-    const onRoomCreated = (payload) => {
-      console.log("[online.js] roomCreated payload", payload);
-      const room = typeof payload === "string" ? payload : payload?.room;
-      const firstPlayer = typeof payload === "string" ? s.id : payload?.firstPlayer ?? s.id;
-      if (!room) {
-        setError("Server returned invalid room data");
-        return;
-      }
-      setError("");
-      router.push({ pathname: "/onlineGame", query: { room, firstPlayer } });
-    };
-
-    const onRoomJoined = ({ room, firstPlayer } = {}) => {
-      if (!room) return;
-      console.log("[online.js] roomJoined", room, firstPlayer);
-      setError("");
-      router.push({ pathname: "/onlineGame", query: { room, firstPlayer } });
-    };
-
-    const onRoomError = (msg) => {
-      console.warn("[online.js] roomError", msg);
-      setError(msg);
-    };
-
-    s.on("roomCreated", onRoomCreated);
-    s.on("roomJoined", onRoomJoined);
-    s.on("roomError", onRoomError);
+    setPusher(pusherClient);
+    setIsConnected(true);
 
     return () => {
-      s.off("connect", onConnect);
-      s.off("connect_error", onConnectError);
-      s.off("roomCreated", onRoomCreated);
-      s.off("roomJoined", onRoomJoined);
-      s.off("roomError", onRoomError);
+      // Cleanup if needed
     };
-  }, [router]);
+  }, []);
 
-  const createRoom = () => {
-    if (!socket) {
-      setError("Socket not ready. Please wait a moment and try again.");
-      return;
+  const createRoom = async () => {
+    try {
+      setError("");
+      
+      const response = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'create',
+          userId: userId
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        router.push({ 
+          pathname: "/onlineGame", 
+          query: { 
+            room: data.room, 
+            firstPlayer: data.firstPlayer,
+            userId: userId
+          } 
+        });
+      } else {
+        setError(data.error || 'Failed to create room');
+      }
+    } catch (err) {
+      console.error('Create room error:', err);
+      setError('Network error - please try again');
     }
-    console.log("[online.js] emit createRoom");
-    setError("");
-    socket.emit("createRoom");
   };
 
-  const joinRoom = () => {
-    if (!socket) {
-      setError("Socket not ready. Please wait a moment and try again.");
-      return;
-    }
+  const joinRoom = async () => {
     if (!roomId.trim()) {
       setError("Please enter a room code");
       return;
     }
-    const code = roomId.trim().toUpperCase();
-    console.log("[online.js] emit joinRoom", code);
-    setError("");
-    socket.emit("joinRoom", code);
+
+    try {
+      setError("");
+      const code = roomId.trim().toUpperCase();
+      
+      const response = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'join',
+          roomCode: code,
+          userId: userId
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        router.push({ 
+          pathname: "/onlineGame", 
+          query: { 
+            room: data.room, 
+            firstPlayer: data.firstPlayer,
+            userId: userId
+          } 
+        });
+      } else {
+        setError(data.error || 'Failed to join room');
+      }
+    } catch (err) {
+      console.error('Join room error:', err);
+      setError('Network error - please try again');
+    }
   };
 
   return (
     <div className="h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white text-center">
       <h1 className="text-4xl font-bold mb-6">🌐 Online Multiplayer</h1>
-
-      {!isConnected && (
-        <div className="mb-4 text-yellow-200">
-          ⚡ Connecting to server... (First load may take a moment)
-        </div>
-      )}
 
       {isConnected && (
         <div className="mb-4 text-green-200">
@@ -135,6 +130,7 @@ export default function Online() {
           onChange={(e) => setRoomId(e.target.value.toUpperCase())}
           placeholder="Enter room code"
           className="px-3 py-2 rounded text-black"
+          maxLength={4}
         />
         <button 
           onClick={joinRoom} 

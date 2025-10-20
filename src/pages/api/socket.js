@@ -90,10 +90,13 @@ export default function handler(req, res) {
           "matchCheck",
           "turnChange",
           "timerUpdate",
-          "gameOver",
           "cardFlip",        // ADD THIS
           "cardMatch",       // ADD THIS
           "resetFlipped",    // ADD THIS
+          "scoreUpdate",      // ADD THIS
+          "rematchRequest",   // ADD THIS
+          "rematchAccepted",  // ADD THIS
+          "requestDeck",
         ].forEach((evt) => {
             socket.on(evt, (payload = {}) => {
               try {
@@ -105,7 +108,17 @@ export default function handler(req, res) {
               }
             });
           });
-
+        
+        socket.on("gameOver", (payload = {}) => {
+          try {
+            if (!payload || !payload.roomId) return;
+            // use io.to to include the sender in the broadcast
+            io.to(payload.roomId).emit("gameOver", payload);
+          } catch (err) {
+            console.error(`[socket] relay gameOver error:`, err);
+          }
+        });
+        
         socket.on("disconnect", (reason) => {
           console.log("[socket] disconnected", socket.id, reason);
           for (const [code, room] of Object.entries(rooms)) {

@@ -59,6 +59,7 @@ export default function MemoryMatch({
   const [bestScores, setBestScores] = useState({});
   const [currentPlayer, setCurrentPlayer] = useState(1);
   const [playerScores, setPlayerScores] = useState({ 1: 0, 2: 0 });
+  const [onlineScores, setOnlineScores] = useState({});
   const [totalWins, setTotalWins] = useState({ red: 0, blue: 0 });
   const [winner, setWinner] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -71,6 +72,11 @@ export default function MemoryMatch({
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [playerName, setPlayerName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Rematch states
+  const [rematchRequested, setRematchRequested] = useState(false);
+  const [opponentRematchRequested, setOpponentRematchRequested] = useState(false);
+  const [showRematchModal, setShowRematchModal] = useState(false);
 
   // Load best scores
   useEffect(() => {
@@ -112,7 +118,7 @@ export default function MemoryMatch({
     setMusicOn(!musicOn);
   };
 
-  const createDeck = () => {
+  const createDeck = (isRematch = false) => {
     const chosen = EMOJIS.slice(0, pairsCount);
     const pairEmojis = shuffle([...chosen, ...chosen]);
     const deck = pairEmojis.map((emoji, idx) => ({
@@ -123,7 +129,17 @@ export default function MemoryMatch({
     setCards(deck);
 
     if (mode === "online" && socket && roomId && isHost) {
-      socket.emit("deckReady", { roomId, deck, hostId: socket.id });
+      if (isRematch) {
+        // For rematch, emit rematchAccepted with the new deck
+        socket.emit("rematchAccepted", { 
+          roomId, 
+          deck, 
+          hostId: socket.id 
+        });
+      } else {
+        // For initial game start
+        socket.emit("deckReady", { roomId, deck, hostId: socket.id });
+      }
     }
 
     setFlipped([]);
@@ -135,9 +151,25 @@ export default function MemoryMatch({
     setDisabled(false);
     setCurrentPlayer(1);
     setPlayerScores({ 1: 0, 2: 0 });
+    setOnlineScores({}); // Reset online scores
     setWinner(null);
     setShowModal(false);
+    setRematchRequested(false);
+    setOpponentRematchRequested(false);
+    setShowRematchModal(false);
   };
+
+  // Add this useEffect for auto-rematch
+  useEffect(() => {
+    if (mode === "online" && isHost && rematchRequested && opponentRematchRequested) {
+      // Wait a moment for UI feedback, then start new game
+      const timer = setTimeout(() => {
+        createDeck(true); // Pass true to indicate this is a rematch
+      }, 1500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [mode, isHost, rematchRequested, opponentRematchRequested]);
 
   // Non-online modes create deck immediately (single/two)
   useEffect(() => {
@@ -162,6 +194,9 @@ export default function MemoryMatch({
     setStarted(false);
     setDisabled(false);
     setPlayerScores({ 1: 0, 2: 0 });
+    setOnlineScores({});
+    setWinner(null);
+    setShowModal(false);
     const iAmHost = socket.id === hostId;
     setIsMyTurn(iAmHost);
     setCurrentPlayer(iAmHost ? 1 : 2);
@@ -170,6 +205,36 @@ export default function MemoryMatch({
   socket.on("deckReady", onDeckReady);
   return () => socket.off("deckReady", onDeckReady);
 }, [mode, socket]);
+
+useEffect(() => {
+  if (mode !== "online" || !socket || !roomId || isHost) return;
+  
+  // If we don't have cards but the game has started, request the deck
+  if (gameStarted && cards.length === 0) {
+    console.log("[MemoryMatch] No deck received, requesting from host");
+    socket.emit("requestDeck", { roomId, senderId: socket.id });
+  }
+}, [mode, socket, roomId, isHost, gameStarted, cards.length]);
+
+// NEW: Handle deck requests (for host)
+useEffect(() => {
+  if (mode !== "online" || !socket || !roomId || !isHost) return;
+
+  const onRequestDeck = ({ senderId } = {}) => {
+    console.log("[MemoryMatch] Deck requested by", senderId);
+    if (cards.length > 0) {
+      // Send the current deck to the requesting player
+      socket.emit("deckReady", { 
+        roomId, 
+        deck: cards, 
+        hostId: socket.id 
+      });
+    }
+  };
+
+  socket.on("requestDeck", onRequestDeck);
+  return () => socket.off("requestDeck", onRequestDeck);
+}, [mode, socket, roomId, isHost, cards]);
 
   // Host: wait for the server 'startGame' (or gameStarted prop) before creating deck.
   useEffect(() => {
@@ -180,7 +245,7 @@ export default function MemoryMatch({
     }
     if (!isHost) {
       console.log("[MemoryMatch] non-host waiting for deckReady");
-      setCards([]); // blank until deck arrives
+      // setCards([]); // blank until deck arrives
       return;
     }
     if (!roomId) {
@@ -192,8 +257,11 @@ export default function MemoryMatch({
     // create deck now.
     if (gameStarted) {
       console.log("[MemoryMatch] gameStarted prop true — host creating deck for room", roomId);
-      createDeck();
-      setIsMyTurn(true);
+      // Use setTimeout to ensure the deck is created after component is fully mounted
+      setTimeout(() => {
+        createDeck();
+        setIsMyTurn(true);
+      }, 500);
       return;
     }
 
@@ -201,8 +269,10 @@ export default function MemoryMatch({
     const onStart = ({ room: r, firstPlayer: fp } = {}) => {
       if (r !== roomId) return;
       console.log("[MemoryMatch] startGame received for room", r, "firstPlayer:", fp);
-      createDeck();
-      setIsMyTurn(socket.id === fp);
+      setTimeout(() => {
+        createDeck();
+        setIsMyTurn(socket.id === fp);
+      }, 500);
     };
     socket.on("startGame", onStart);
 
@@ -336,14 +406,38 @@ export default function MemoryMatch({
 
       // Online Multiplayer Mode Logic
       if (mode === "online" && socket && roomId) {
-        socket.emit("gameOver", {
-          roomId,
-          winnerId: socket.id,
-          winnerScore: playerScores, // optional
-        });
-        setWinner("you");
+        console.log("[DEBUG] onlineScores before game over:", onlineScores);
+        
+        // Only the host should calculate and emit the final game over
+        if (isHost) {
+          setTimeout(() => {
+            const myScore = onlineScores[socket.id] || 0;
+            const opponentIds = Object.keys(onlineScores).filter(id => id !== socket.id);
+            const opponentId = opponentIds[0]; // Get the actual opponent socket ID
+            const opponentScore = opponentIds.reduce((sum, id) => sum + (onlineScores[id] || 0), 0);
+            
+            console.log("[MemoryMatch] Final scores - You:", myScore, "Opponent:", opponentScore, "All scores:", onlineScores);
+            
+            let winnerId;
+            if (myScore > opponentScore) {
+              winnerId = socket.id; // Host wins
+            } else if (opponentScore > myScore) {
+              winnerId = opponentId; // Opponent wins - use their actual socket ID
+            } else {
+              winnerId = "draw"; // Draw
+            }
+            
+            console.log("[MemoryMatch] Emitting winnerId:", winnerId);
+            
+            socket.emit("gameOver", {
+              roomId,
+              winnerId, // This will be either socket.id, opponentId, or "draw"
+              scores: onlineScores,
+            });
+          }, 100);
+        }
+        // Non-host players will set their winner when they receive the gameOver event
       }
-
       // Show result modal
       setTimeout(() => setShowModal(true), 1000);
     }
@@ -389,59 +483,78 @@ export default function MemoryMatch({
   };
 
   const handleMatchCheck = (newFlipped) => {
-  const [i1, i2] = newFlipped;
+    const [i1, i2] = newFlipped;
 
-  if (i1 == null || i2 == null || i1 === i2) {
-    setTimeout(() => {
-      setFlipped([]);
-      setDisabled(false);
+    if (i1 == null || i2 == null || i1 === i2) {
+      setTimeout(() => {
+        setFlipped([]);
+        setDisabled(false);
 
-      if (mode === "online" && socket && roomId) {
-        socket.emit("resetFlipped", { roomId, senderId: socket.id });
-      }
-    }, 400);
-    return;
-  }
-
-  const c1 = cards[i1], c2 = cards[i2];
-
-  if (!c1 || !c2) {
-    setTimeout(() => {
-      setFlipped([]);
-      setDisabled(false);
-
-      if (mode === "online" && socket && roomId) {
-        socket.emit("resetFlipped", { roomId, senderId: socket.id });
-      }
-    }, 400);
-    return;
-  }
-
-  const isMatch = c1?.emoji === c2?.emoji;
-
-  // Increment moves
-  setMoves((m) => m + 1);
-
-  // Handle local updates first
-  if (isMatch) {
-    setMatchedIds((prev) => {
-      const ns = new Set(prev);
-      ns.add(c1.uuid);
-      ns.add(c2.uuid);
-      return ns;
-    });
-
-    setFlipped([]);
-    matchSound.current?.play();
-    setDisabled(false);
-
-    // Update scores for two-player mode
-    if (mode === "two") {
-      setPlayerScores(prev => ({
-        ...prev,
-        [currentPlayer]: prev[currentPlayer] + 1
-      }));
+        if (mode === "online" && socket && roomId) {
+          socket.emit("resetFlipped", { roomId, senderId: socket.id });
+        }
+      }, 400);
+      return;
     }
+
+    const c1 = cards[i1], c2 = cards[i2];
+
+    if (!c1 || !c2) {
+      setTimeout(() => {
+        setFlipped([]);
+        setDisabled(false);
+
+        if (mode === "online" && socket && roomId) {
+          socket.emit("resetFlipped", { roomId, senderId: socket.id });
+        }
+      }, 400);
+      return;
+    }
+
+    const isMatch = c1?.emoji === c2?.emoji;
+
+    // Increment moves
+    setMoves((m) => m + 1);
+
+    // Handle local updates first
+    if (isMatch) {
+      setMatchedIds((prev) => {
+        const ns = new Set(prev);
+        ns.add(c1.uuid);
+        ns.add(c2.uuid);
+        return ns;
+      });
+
+      setFlipped([]);
+      matchSound.current?.play();
+      setDisabled(false);
+
+      // Update scores - FOR ONLINE MODE
+      if (mode === "online" && socket) {
+        setOnlineScores(prev => {
+          const newScores = {
+            ...prev,
+            [socket.id]: (prev[socket.id] || 0) + 1
+          };
+          
+          // Emit score update to opponent
+          socket.emit("scoreUpdate", {
+            roomId,
+            scores: newScores,
+            senderId: socket.id
+          });
+          
+          return newScores;
+        });
+      }
+
+      // Update scores for two-player mode
+      if (mode === "two") {
+        setPlayerScores(prev => ({
+          ...prev,
+          [currentPlayer]: prev[currentPlayer] + 1
+        }));
+      }
 
     // EMIT MATCH TO OPPONENT - MOVED HERE FOR BETTER TIMING
     if (mode === "online" && socket && roomId) {
@@ -563,6 +676,55 @@ export default function MemoryMatch({
       }
     };
 
+    const onScoreUpdate = ({ scores, senderId } = {}) => {
+      if (senderId && socket && senderId === socket.id) return;
+      
+      console.log("[MemoryMatch] score update received:", scores);
+      setOnlineScores(scores || {});
+    };
+
+    const onRematchRequest = ({ senderId } = {}) => {
+      if (senderId && socket && senderId === socket.id) return;
+      
+      console.log("[MemoryMatch] opponent requested rematch");
+      setOpponentRematchRequested(true);
+      
+      // If we haven't requested yet, show the rematch modal
+      if (!rematchRequested) {
+        setShowRematchModal(true);
+      }
+    };
+
+    const onRematchAccepted = ({ deck, hostId } = {}) => {
+      console.log("[MemoryMatch] rematch accepted, starting new game");
+      
+      // Reset game states
+      setCards(deck || []);
+      setFlipped([]);
+      setMatchedIds(new Set());
+      setMoves(0);
+      setSeconds(0);
+      setStarted(false);
+      setDisabled(false);
+      setOnlineScores({});
+      setRematchRequested(false);
+      setOpponentRematchRequested(false);
+      setShowRematchModal(false);
+      setShowModal(false);
+      setWinner(null);
+      
+      // Set turn based on who is host
+      if (socket && hostId) {
+        setIsMyTurn(socket.id === hostId);
+      }
+      
+      if (musicOn) {
+        bgMusic.current.pause();
+        bgMusic.current.currentTime = 0;
+        bgMusic.current.play().catch(() => {});
+      }
+    };
+
     socket.on("cardFlip", onCardFlip);
     socket.on("cardMatch", onCardMatch);
     socket.on("resetFlipped", onResetFlipped);
@@ -574,14 +736,36 @@ export default function MemoryMatch({
       setDisabled(false);
     });
 
+    socket.on("scoreUpdate", onScoreUpdate);
     socket.on("timerUpdate", ({ seconds } = {}) => {
       setSeconds(seconds);
     });
 
-    socket.on("gameOver", ({ winner } = {}) => {
+    socket.on("gameOver", ({ winnerId, scores } = {}) => {
+      console.log("[MemoryMatch] gameOver received", { winnerId, scores });
+      console.log("[MemoryMatch] Our socket ID:", socket.id);
+      
       setShowModal(true);
-      setWinner(winner === socket.id ? "you" : "opponent");
+      
+      if (scores) {
+        setOnlineScores(scores);
+      }
+      
+      // winnerId is now either a socket ID or "draw"
+      if (winnerId === socket.id) {
+        console.log("[MemoryMatch] Setting winner: you (we won!)");
+        setWinner("you");
+      } else if (winnerId === "draw") {
+        console.log("[MemoryMatch] Setting winner: draw");
+        setWinner("draw");
+      } else {
+        console.log("[MemoryMatch] Setting winner: opponent (we lost)");
+        setWinner("opponent");
+      }
     });
+
+    socket.on("rematchRequest", onRematchRequest);
+    socket.on("rematchAccepted", onRematchAccepted);
 
     return () => {
       if (!socket) return;
@@ -596,29 +780,23 @@ export default function MemoryMatch({
     };
   }, [mode, socket, roomId, cards, matchedIds]); // ADDED cards and matchedIds dependencies
 
-  useEffect(() => {
-    if (mode !== "online" || !socket) return;
-
-    socket.on("gameOver", ({ winner } = {}) => {
-      setShowModal(true);
-      if (winner === socket.id) {
-        setWinner("you");
-      } else {
-        setWinner("opponent");
-      }
-    });
-
-    return () => {
-      socket.off("gameOver");
-    };
-  }, [mode, socket]);
-
   const restart = () => {
-    createDeck();
-    if (musicOn) {
-      bgMusic.current.pause();
-      bgMusic.current.currentTime = 0;
-      bgMusic.current.play().catch(() => {});
+    // For online mode, use rematch system
+    if (mode === "online" && socket && roomId) {
+      setRematchRequested(true);
+      socket.emit("rematchRequest", { roomId, senderId: socket.id });
+      
+      // Show waiting modal
+      setShowRematchModal(true);
+      setShowModal(false);
+    } else {
+      // For single/two player, restart immediately
+      createDeck();
+      if (musicOn) {
+        bgMusic.current.pause();
+        bgMusic.current.currentTime = 0;
+        bgMusic.current.play().catch(() => {});
+      }
     }
   };
 
@@ -754,6 +932,33 @@ export default function MemoryMatch({
               {musicOn ? "🔊 Music On" : "🔇 Music Off"}
             </button>
           </div>
+
+          {mode === "online" && (
+            <div className="flex flex-col text-sm sm:text-base font-semibold text-center">
+              <div 
+                className="flex gap-4 justify-center px-4 py-2 rounded-2xl"
+                style={{
+                  background: isMyTurn 
+                    ? "rgba(34, 197, 94, 0.25)"
+                    : "rgba(148, 163, 184, 0.25)",
+                  backdropFilter: "blur(8px)",
+                  minWidth: "180px",
+                }}
+              >
+                <span className={`${isMyTurn ? "underline" : ""} text-green-100`}>
+                  🟢 You: {onlineScores[socket?.id] || 0}
+                </span>
+                <span className={`${!isMyTurn ? "underline" : ""} text-blue-100`}>
+                  🔵 Opponent: {Object.entries(onlineScores)
+                    .filter(([id]) => id !== socket?.id)
+                    .reduce((sum, [_, score]) => sum + score, 0)}
+                </span>
+              </div>
+              <div className="text-xs mt-1 opacity-90">
+                {isMyTurn ? "🎮 Your Turn" : "⏳ Opponent's Turn"}
+              </div>
+            </div>
+          )}
         </header>
 
         <section className={`grid ${gridCols} gap-1.5 sm:gap-2 md:gap-3 justify-items-center content-center flex-1 [perspective:1200px] my-1 ${selectedDifficulty === "hard" ? "max-w-[360px] sm:max-w-[500px] md:max-w-none mx-auto" : ""}`}>
@@ -810,6 +1015,17 @@ export default function MemoryMatch({
                       : "🏆 🔵 Blue Wins!"
                   : "🎉 You Won!"}
             </h2>
+            
+            {/* Show scores for online mode */}
+            {mode === "online" && (
+              <p className="mb-2 text-sm opacity-90">
+                Scores - You: {onlineScores[socket?.id] || 0} | Opponent: {
+                  Object.entries(onlineScores)
+                    .filter(([id]) => id !== socket?.id)
+                    .reduce((sum, [_, score]) => sum + score, 0)
+                }
+              </p>
+            )}
 
             <p className="mb-2 text-sm opacity-90">Moves: {moves} • Time: {formatTime(seconds)}</p>
 
@@ -872,6 +1088,71 @@ export default function MemoryMatch({
                 Exit to Menu
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD THE REMATCH MODAL RIGHT HERE - AFTER THE GAME OVER MODAL */}
+      {showRematchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
+          <div className="bg-white rounded-lg p-6 w-80 sm:w-96 text-center text-gray-900 animate-scale-in">
+            <h2 className="text-2xl font-bold mb-4">🔄 Play Again?</h2>
+            
+            {rematchRequested && !opponentRematchRequested && (
+              <div>
+                <p className="mb-4">Waiting for opponent to accept rematch...</p>
+                <div className="animate-pulse">⏳</div>
+              </div>
+            )}
+            
+            {!rematchRequested && opponentRematchRequested && (
+              <div>
+                <p className="mb-4">Your opponent wants to play again!</p>
+                <button
+                  onClick={() => {
+                    setRematchRequested(true);
+                    socket.emit("rematchRequest", { roomId, senderId: socket.id });
+                  }}
+                  className="bg-green-600 text-white px-4 py-2 rounded font-medium hover:bg-green-700 transition mr-2"
+                >
+                  Accept Rematch
+                </button>
+                <button
+                  onClick={() => {
+                    setShowRematchModal(false);
+                    setOpponentRematchRequested(false);
+                  }}
+                  className="bg-gray-600 text-white px-4 py-2 rounded font-medium hover:bg-gray-700 transition"
+                >
+                  Decline
+                </button>
+              </div>
+            )}
+            
+            {rematchRequested && opponentRematchRequested && (
+              <div>
+                <p className="mb-4">Starting new game...</p>
+                <div className="animate-spin">🎮</div>
+              </div>
+            )}
+            
+            {!rematchRequested && !opponentRematchRequested && (
+              <div>
+                <p className="mb-4">Would you like to play again?</p>
+                <button
+                  onClick={restart}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700 transition mr-2"
+                >
+                  Play Again
+                </button>
+                <button
+                  onClick={() => setShowRematchModal(false)}
+                  className="bg-gray-600 text-white px-4 py-2 rounded font-medium hover:bg-gray-700 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

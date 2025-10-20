@@ -1,33 +1,42 @@
 // lib/socket.js
 import { io } from "socket.io-client";
 
-function createSocket() {
-  const s = io({
-    path: "/api/socket",
-    autoConnect: true,
-    // transports: ["websocket"], // optional if you want to force websocket
-  });
-
-  s.on("connect", () => console.log("[getSocket] connected", s.id));
-  s.on("connect_error", (err) => console.error("[getSocket] connect_error", err));
-  s.on("error", (err) => console.error("[getSocket] error", err));
-  return s;
-}
+let socket;
 
 export default function getSocket() {
   if (typeof window === "undefined") return null;
-
-  // Persist socket instance on window so HMR / Fast Refresh doesn't create duplicates
-  if (!window.__MEMORY_SOCKET__) {
-    window.__MEMORY_SOCKET__ = createSocket();
-  } else if (window.__MEMORY_SOCKET__ && window.__MEMORY_SOCKET__.disconnected) {
-    // Try to reconnect if it was disconnected
+  
+  if (!socket) {
     try {
-      window.__MEMORY_SOCKET__.connect();
-    } catch (e) {
-      console.warn("[getSocket] reconnect failed", e);
+      socket = io({
+        path: "/api/socket",
+        timeout: 20000, // Increased from 10000 to 20000
+        transports: ["websocket", "polling"],
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        autoConnect: true,
+        forceNew: false
+      });
+
+      socket.on("connect", () => {
+        console.log("[socket] Connected to server");
+      });
+
+      socket.on("connect_error", (err) => {
+        console.error("[socket] Connection error:", err.message);
+        // Don't throw error - just log it
+      });
+
+      socket.on("disconnect", (reason) => {
+        console.log("[socket] Disconnected:", reason);
+      });
+    } catch (error) {
+      console.error("[socket] Initialization error:", error);
+      return null;
     }
   }
-
-  return window.__MEMORY_SOCKET__;
+  
+  return socket;
 }

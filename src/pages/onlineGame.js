@@ -13,21 +13,58 @@ export default function OnlineGame() {
   const [opponentJoined, setOpponentJoined] = useState(false);
   const [opponentDisconnected, setOpponentDisconnected] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
-
+  const [isLoading, setIsLoading] = useState(true);
+  
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const s = getSocket();
-    if (!s) return;
-    setSocket(s);
+    
+    let isMounted = true;
+    
+    const initializeSocket = async () => {
+      try {
+        const s = getSocket();
+        if (!s) {
+          if (isMounted) {
+            setIsLoading(false);
+          }
+          return;
+        }
 
-    const onConnect = () => console.log("[onlineGame] socket connected", s.id);
-    const onDisconnect = (reason) => console.log("[onlineGame] disconnected", reason);
-    s.on("connect", onConnect);
-    s.on("disconnect", onDisconnect);
+        // Wait for connection
+        if (!s.connected) {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error("Connection timeout"));
+            }, 3000);
+
+            s.once("connect", () => {
+              clearTimeout(timeout);
+              resolve();
+            });
+
+            s.once("connect_error", (err) => {
+              clearTimeout(timeout);
+              reject(err);
+            });
+          });
+        }
+
+        if (isMounted) {
+          setSocket(s);
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error("[onlineGame] Socket initialization error:", err);
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initializeSocket();
 
     return () => {
-      s.off("connect", onConnect);
-      s.off("disconnect", onDisconnect);
+      isMounted = false;
     };
   }, []);
 
@@ -127,13 +164,18 @@ export default function OnlineGame() {
   if (!gameStarted) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white text-center">
-        <h1 className="text-3xl font-bold mb-4">{isHost ? "Waiting for Opponent..." : "Joining room..."}</h1>
+        <h1 className="text-3xl font-bold mb-4">
+          {isHost ? "Waiting for Opponent..." : "Waiting for Game Start..."}
+        </h1>
         <p className="text-lg">Room Code: <strong>{room}</strong></p>
         <div className="mt-4">
           {isHost ? (
             <p className="text-sm opacity-90">Share this code with a friend — the game will start when they join.</p>
           ) : (
-            <p className="text-sm opacity-90">Waiting for the host to start the game...</p>
+            <div>
+              <p className="text-sm opacity-90 mb-2">Waiting for host to start the game...</p>
+              <div className="animate-pulse">🎮</div>
+            </div>
           )}
         </div>
         <button onClick={() => router.push("/memoryHome")} className="mt-6 text-white/80 hover:text-white">← Exit</button>

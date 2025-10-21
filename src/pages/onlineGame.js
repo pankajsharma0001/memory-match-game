@@ -14,6 +14,7 @@ export default function OnlineGame() {
   const [opponentDisconnected, setOpponentDisconnected] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState('connecting'); // Add this state
 
   useEffect(() => {
     if (!room || !userId) return;
@@ -26,12 +27,26 @@ export default function OnlineGame() {
           return;
         }
 
+        // Monitor connection status using the pusher instance
+        pusher.connection.bind('state_change', (states) => {
+          setConnectionStatus(states.current);
+        });
+
+        pusher.connection.bind('connected', () => {
+          setConnectionStatus('connected');
+        });
+
+        pusher.connection.bind('disconnected', () => {
+          setConnectionStatus('disconnected');
+        });
+
         // Subscribe to room channel
         const roomChannel = pusher.subscribe(`room-${room}`);
         
         roomChannel.bind('pusher:subscription_succeeded', () => {
           console.log('✅ Subscribed to room:', room);
           setIsLoading(false);
+          setConnectionStatus('connected');
         });
 
         // Handle player joined
@@ -81,6 +96,7 @@ export default function OnlineGame() {
       } catch (error) {
         console.error('❌ Pusher initialization error:', error);
         setIsLoading(false);
+        setConnectionStatus('error');
       }
     };
 
@@ -141,15 +157,17 @@ export default function OnlineGame() {
       gameStarted,
       opponentJoined,
       channel: !!channel,
-      isLoading
+      isLoading,
+      connectionStatus // Add connection status to debug logs
     });
-  }, [room, userId, isHost, gameStarted, opponentJoined, channel, isLoading]);
+  }, [room, userId, isHost, gameStarted, opponentJoined, channel, isLoading, connectionStatus]);
 
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white">
         <div className="text-xl mb-4">Loading game...</div>
         <div className="animate-spin">🎮</div>
+        <div className="text-sm mt-2">Status: {connectionStatus}</div>
       </div>
     );
   }
@@ -190,6 +208,16 @@ export default function OnlineGame() {
               <div className="animate-pulse">🎮</div>
             </div>
           )}
+        </div>
+
+        {/* Connection status indicator */}
+        <div className="flex items-center gap-2 mt-4 text-sm">
+          <div className={`w-2 h-2 rounded-full ${
+            connectionStatus === 'connected' ? 'bg-green-500 animate-pulse' :
+            connectionStatus === 'connecting' ? 'bg-yellow-500' :
+            'bg-red-500'
+          }`}></div>
+          <span>Status: {connectionStatus}</span>
         </div>
 
         <button onClick={() => router.push("/memoryHome")} className="mt-6 text-white/80 hover:text-white">

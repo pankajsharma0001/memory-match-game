@@ -3,6 +3,22 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/router";
 
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  
+  return debouncedValue;
+};
+
 const EMOJIS = [
   "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮",
   "🐸","🐵","🐔","🦄","🐙","🐝","🐞","🪲","🦋","🐢","🐬","🐳"
@@ -38,6 +54,10 @@ export default function MemoryMatch({
 }) {
   const router = useRouter();
   
+  const FLIP_DURATION = 600; // Increased from 500ms
+  const MATCH_CHECK_DELAY = 1000; // Increased from 800ms
+  const CARD_FLIP_DELAY = 300; // Delay between card flips
+
   // Audio references
   const bgMusic = useRef(null);
   const flipSound = useRef(null);
@@ -65,6 +85,10 @@ export default function MemoryMatch({
   const [winner, setWinner] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [openDropdown, setOpenDropdown] = useState(false);
+
+  const debouncedFlipped = useDebounce(flipped, 150);
+
+  const lastSentFlip = useRef(null);
 
   // Particle container ref for bursts
   const particleContainer = useRef(null);
@@ -448,33 +472,36 @@ export default function MemoryMatch({
 
     // Send flip event via API instead of client event
     if (mode === "online" && channel) {
-      fetch('/api/rooms', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'card-flip',
-          roomCode: roomId,
-          senderId: userId,
-          flippedIndex: index,
-          cardId: cards[index].id
-        }),
-      }).catch(error => {
-        console.error('Error sending card flip:', error);
-      });
+      if (index !== lastSentFlip.current || !debouncedFlipped.includes(index)) {
+        lastSentFlip.current = index;
+
+        fetch('/api/rooms', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'card-flip',
+            roomCode: roomId,
+            senderId: userId,
+            flippedIndex: index,
+            cardId: cards[index].id
+          }),
+        }).catch(error => {
+          console.error('Error sending card flip:', error);
+        });
+      }
     }
 
-    // FIXED: Check for match immediately when two cards are flipped
     if (newFlipped.length === 2) {
       setDisabled(true);
       
       // For online mode, only the current player should validate matches
       if (mode === "online") {
-        handleMatchCheck(newFlipped);
+        setTimeout(() => handleMatchCheck(newFlipped), FLIP_DURATION + 100);
       } else {
-        // For local modes, validate immediately
-        setTimeout(() => handleMatchCheck(newFlipped), 300);
+        // For local modes, validate with delay
+        setTimeout(() => handleMatchCheck(newFlipped), FLIP_DURATION + 100);
       }
     }
   };
@@ -509,6 +536,55 @@ export default function MemoryMatch({
 
     channel.bind("server-card-flip", handleServerCardFlip);
     return () => channel.unbind("server-card-flip", handleServerCardFlip);
+  }, [mode, channel, userId, cards, matchedIds]);
+
+  //UseEffect to batch opponent card flips
+  useEffect(() => {
+    if (mode !== "online" || !channel) return;
+
+    let flipBuffer = [];
+    let flipTimeout;
+
+    const handleServerCardFlip = (data) => {
+      if (data.senderId === userId) return;
+      
+      console.log("[MemoryMatch] server-card-flip received:", data.flippedIndex);
+      
+      flipBuffer.push(data.flippedIndex);
+      
+      // Clear previous timeout
+      if (flipTimeout) clearTimeout(flipTimeout);
+      
+      // Batch flips to prevent rapid updates
+      flipTimeout = setTimeout(() => {
+        setFlipped(prev => {
+          const newFlipped = [...prev];
+          for (const index of flipBuffer) {
+            if (!newFlipped.includes(index) && !matchedIds.has(cards[index]?.uuid)) {
+              newFlipped.push(index);
+            }
+          }
+          flipBuffer = [];
+          
+          // Auto-check for match if opponent flipped second card
+          if (newFlipped.length === 2) {
+            setTimeout(() => {
+              handleOpponentMatchCheck(newFlipped);
+            }, FLIP_DURATION + 200);
+          }
+          
+          return newFlipped;
+        });
+
+        flipSound.current?.play();
+      }, 100); // Small delay to batch multiple flips
+    };
+
+    channel.bind("server-card-flip", handleServerCardFlip);
+    return () => {
+      channel.unbind("server-card-flip", handleServerCardFlip);
+      if (flipTimeout) clearTimeout(flipTimeout);
+    };
   }, [mode, channel, userId, cards, matchedIds]);
 
   // FIXED: Separate function for opponent's match checking
@@ -572,7 +648,7 @@ export default function MemoryMatch({
       setTimeout(() => {
         setFlipped([]);
         setDisabled(false);
-      }, 400);
+      }, FLIP_DURATION);
       return;
     }
 
@@ -582,7 +658,7 @@ export default function MemoryMatch({
       setTimeout(() => {
         setFlipped([]);
         setDisabled(false);
-      }, 400);
+      }, FLIP_DURATION);
       return;
     }
 
@@ -592,69 +668,71 @@ export default function MemoryMatch({
     setMoves((m) => m + 1);
 
     if (isMatch) {
-      setMatchedIds((prev) => {
-        const ns = new Set(prev);
-        ns.add(c1.uuid);
-        ns.add(c2.uuid);
-        return ns;
-      });
-
-      setFlipped([]);
-      matchSound.current?.play();
-      setDisabled(false);
-
-      // Update scores
-      if (mode === "online" && channel) {
-        const newScores = {
-          ...onlineScores,
-          [userId]: (onlineScores[userId] || 0) + 1
-        };
-        setOnlineScores(newScores);
-        
-        // Send score update via API
-        fetch('/api/rooms', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: 'score-update',
-            roomCode: roomId,
-            senderId: userId,
-            scores: newScores
-          }),
-        }).catch(error => {
-          console.error('Error sending score update:', error);
+      setTimeout(() => {
+        setMatchedIds((prev) => {
+          const ns = new Set(prev);
+          ns.add(c1.uuid);
+          ns.add(c2.uuid);
+          return ns;
         });
 
-        // Send match result
-        const nextMatched = Array.from(new Set([...Array.from(matchedIds), c1.uuid, c2.uuid]));
-        
-        fetch('/api/rooms', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: 'card-match',
-            roomCode: roomId,
-            senderId: userId,
-            matchedIds: nextMatched,
-            moves: moves + 1,
-            isMatch: true
-          }),
-        }).catch(error => {
-          console.error('Error sending card match:', error);
-        });
-      }
+        setFlipped([]);
+        matchSound.current?.play();
+        setDisabled(false);
 
-      // Update scores for two-player mode
-      if (mode === "two") {
-        setPlayerScores(prev => ({
-          ...prev,
-          [currentPlayer]: prev[currentPlayer] + 1
-        }));
-      }
+        // Update scores
+        if (mode === "online" && channel) {
+          const newScores = {
+            ...onlineScores,
+            [userId]: (onlineScores[userId] || 0) + 1
+          };
+          setOnlineScores(newScores);
+          
+          // Send score update via API
+          fetch('/api/rooms', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'score-update',
+              roomCode: roomId,
+              senderId: userId,
+              scores: newScores
+            }),
+          }).catch(error => {
+            console.error('Error sending score update:', error);
+          });
+
+          // Send match result
+          const nextMatched = Array.from(new Set([...Array.from(matchedIds), c1.uuid, c2.uuid]));
+        
+          fetch('/api/rooms', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'card-match',
+              roomCode: roomId,
+              senderId: userId,
+              matchedIds: nextMatched,
+              moves: moves + 1,
+              isMatch: true
+            }),
+          }).catch(error => {
+            console.error('Error sending card match:', error);
+          });
+        }
+
+        // Update scores for two-player mode
+        if (mode === "two") {
+          setPlayerScores(prev => ({
+            ...prev,
+            [currentPlayer]: prev[currentPlayer] + 1
+          }));
+        }
+      }, 300);
     } else {
       setTimeout(() => {
         setFlipped([]);
@@ -685,7 +763,7 @@ export default function MemoryMatch({
         }
 
         setDisabled(false);
-      }, 800);
+      }, MATCH_CHECK_DELAY);
     }
   };
 
@@ -981,7 +1059,6 @@ const startRematch = () => {
               {musicOn ? "🔊 Music On" : "🔇 Music Off"}
             </button>
           </div>
-
           {mode === "online" && (
             <div className="flex flex-col text-sm sm:text-base font-semibold text-center">
               <div 
@@ -1020,7 +1097,7 @@ const startRematch = () => {
                 onClick={() => handleFlip(idx)}
                 className={`${cardSize} cursor-pointer transform transition-transform duration-300 hover:scale-105`}
               >
-                <div className={`relative w-full h-full transition-transform duration-500 [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}>
+                <div className={`relative w-full h-full transition-transform duration-${FLIP_DURATION} [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}>
                   <div className="absolute inset-0 rounded-lg flex items-center justify-center text-base sm:text-lg md:text-xl lg:text-2xl select-none [backface-visibility:hidden] [transform:rotateY(0deg)] bg-white/10 border border-white/10">❓</div>
                   <div className="absolute inset-0 rounded-lg flex items-center justify-center text-lg sm:text-xl md:text-2xl lg:text-3xl select-none [backface-visibility:hidden] [transform:rotateY(180deg)] bg-white text-gray-900 shadow-lg">
                     {card.emoji}

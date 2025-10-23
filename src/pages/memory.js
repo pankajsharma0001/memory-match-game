@@ -54,9 +54,11 @@ export default function MemoryMatch({
 }) {
   const router = useRouter();
   
-  const FLIP_DURATION = 600; // Increased from 500ms
-  const MATCH_CHECK_DELAY = 1000; // Increased from 800ms
-  const CARD_FLIP_DELAY = 300; // Delay between card flips
+  const LOCAL_FLIP_DURATION = 500; // Normal speed for single/two player
+  const LOCAL_MATCH_CHECK_DELAY = 700; // Normal delay for single/two player
+
+  const ONLINE_FLIP_DURATION = 600; // Slower for online mode
+  const ONLINE_MATCH_CHECK_DELAY = 1000; // Longer delay for online mode
 
   // Audio references
   const bgMusic = useRef(null);
@@ -501,7 +503,7 @@ export default function MemoryMatch({
         setTimeout(() => handleMatchCheck(newFlipped), FLIP_DURATION + 100);
       } else {
         // For local modes, validate with delay
-        setTimeout(() => handleMatchCheck(newFlipped), FLIP_DURATION + 100);
+        setTimeout(() => handleMatchCheck(newFlipped), LOCAL_FLIP_DURATION);
       }
     }
   };
@@ -594,7 +596,7 @@ export default function MemoryMatch({
     if (i1 == null || i2 == null || i1 === i2) {
       setTimeout(() => {
         setFlipped([]);
-      }, 400);
+      }, ONLINE_FLIP_DURATION);
       return;
     }
 
@@ -603,7 +605,7 @@ export default function MemoryMatch({
     if (!c1 || !c2) {
       setTimeout(() => {
         setFlipped([]);
-      }, 400);
+      }, ONLINE_FLIP_DURATION);
       return;
     }
 
@@ -636,7 +638,7 @@ export default function MemoryMatch({
         
         // It becomes our turn after opponent's mismatch
         setIsMyTurn(true);
-      }, 800);
+      }, ONLINE_MATCH_CHECK_DELAY);
     }
   };
 
@@ -648,7 +650,7 @@ export default function MemoryMatch({
       setTimeout(() => {
         setFlipped([]);
         setDisabled(false);
-      }, FLIP_DURATION);
+      }, mode === "online" ? ONLINE_FLIP_DURATION : LOCAL_FLIP_DURATION);
       return;
     }
 
@@ -658,7 +660,7 @@ export default function MemoryMatch({
       setTimeout(() => {
         setFlipped([]);
         setDisabled(false);
-      }, FLIP_DURATION);
+      }, mode === "online" ? ONLINE_FLIP_DURATION : LOCAL_FLIP_DURATION);
       return;
     }
 
@@ -734,6 +736,8 @@ export default function MemoryMatch({
         }
       }, 300);
     } else {
+      const mismatchDelay = mode === "online" ? ONLINE_MATCH_CHECK_DELAY : LOCAL_MATCH_CHECK_DELAY;
+
       setTimeout(() => {
         setFlipped([]);
         mismatchSound.current?.play();
@@ -763,7 +767,7 @@ export default function MemoryMatch({
         }
 
         setDisabled(false);
-      }, MATCH_CHECK_DELAY);
+      }, mismatchDelay);
     }
   };
 
@@ -1097,7 +1101,11 @@ const startRematch = () => {
                 onClick={() => handleFlip(idx)}
                 className={`${cardSize} cursor-pointer transform transition-transform duration-300 hover:scale-105`}
               >
-                <div className={`relative w-full h-full transition-transform duration-${FLIP_DURATION} [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}>
+                <div className={`relative w-full h-full transition-transform [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}
+                style={{ 
+                  transitionDuration: `${mode === "online" ? ONLINE_FLIP_DURATION : LOCAL_FLIP_DURATION}ms` 
+                }}
+                >
                   <div className="absolute inset-0 rounded-lg flex items-center justify-center text-base sm:text-lg md:text-xl lg:text-2xl select-none [backface-visibility:hidden] [transform:rotateY(0deg)] bg-white/10 border border-white/10">❓</div>
                   <div className="absolute inset-0 rounded-lg flex items-center justify-center text-lg sm:text-xl md:text-2xl lg:text-3xl select-none [backface-visibility:hidden] [transform:rotateY(180deg)] bg-white text-gray-900 shadow-lg">
                     {card.emoji}

@@ -55,7 +55,7 @@ export default function MemoryMatch({
   const router = useRouter();
   
   const LOCAL_FLIP_DURATION = 500; // Normal speed for single/two player
-  const LOCAL_MATCH_CHECK_DELAY = 700; // Normal delay for single/two player
+  const LOCAL_MATCH_CHECK_DELAY = 600; // Normal delay for single/two player
 
   const ONLINE_FLIP_DURATION = 600; // Slower for online mode
   const ONLINE_MATCH_CHECK_DELAY = 1000; // Longer delay for online mode
@@ -500,7 +500,7 @@ export default function MemoryMatch({
       
       // For online mode, only the current player should validate matches
       if (mode === "online") {
-        setTimeout(() => handleMatchCheck(newFlipped), FLIP_DURATION + 100);
+        setTimeout(() => handleMatchCheck(newFlipped), ONLINE_FLIP_DURATION + 100);
       } else {
         // For local modes, validate with delay
         setTimeout(() => handleMatchCheck(newFlipped), LOCAL_FLIP_DURATION);
@@ -572,7 +572,7 @@ export default function MemoryMatch({
           if (newFlipped.length === 2) {
             setTimeout(() => {
               handleOpponentMatchCheck(newFlipped);
-            }, FLIP_DURATION + 200);
+            }, LOCAL_FLIP_DURATION + 200);
           }
           
           return newFlipped;

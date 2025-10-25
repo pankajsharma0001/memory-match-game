@@ -89,6 +89,14 @@ export default function MemoryHome() {
 
             {/* 🏆 Leaderboard Button */}
             <motion.button
+              onClick={() => router.push("/online")}
+              className="mt-8 px-6 py-2 bg-white/20 border border-white/30 rounded-lg backdrop-blur-md text-white/90 font-medium hover:bg-white/30 hover:scale-105 transition-all"
+            >
+              <span className="relative z-10">🌐 Online Multiplayer</span>
+              <div className="absolute inset-0 bg-gradient-to-r from-green-500 via-teal-500 to-blue-500 opacity-0 group-hover:opacity-40 transition-all duration-300"></div>
+            </motion.button>
+            
+            <motion.button
               onClick={() => router.push("/leaderboard")}
               className="mt-8 px-6 py-2 bg-white/20 border border-white/30 rounded-lg backdrop-blur-md text-white/90 font-medium hover:bg-white/30 hover:scale-105 transition-all"
               variants={fadeUp}
@@ -97,13 +105,6 @@ export default function MemoryHome() {
               🏆 View Leaderboard
             </motion.button>
 
-            <motion.button
-              onClick={() => router.push("/online")}
-              className="mt-8 px-6 py-2 bg-white/20 border border-white/30 rounded-lg backdrop-blur-md text-white/90 font-medium hover:bg-white/30 hover:scale-105 transition-all"
-            >
-              <span className="relative z-10">🌐 Online Multiplayer</span>
-              <div className="absolute inset-0 bg-gradient-to-r from-green-500 via-teal-500 to-blue-500 opacity-0 group-hover:opacity-40 transition-all duration-300"></div>
-            </motion.button>
 
           </motion.div>
         )}

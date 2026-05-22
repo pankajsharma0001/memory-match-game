@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/router";
+import confetti from "canvas-confetti";
 
 const useDebounce = (value, delay) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -346,6 +347,13 @@ export default function MemoryMatch({
     if (cards.length > 0 && matchedIds.size === cards.length) {
       stopTimer();
       winSound.current?.play();
+
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ["#06b6d4", "#8b5cf6", "#f43f5e", "#f59e0b", "#10b981"]
+      });
 
       // Two Player Mode
       if (mode === "two") {
@@ -860,22 +868,24 @@ const startRematch = () => {
     return "w-[70px] h-[70px] sm:w-[75px] sm:h-[75px] md:w-20 md:h-20 lg:w-24 lg:h-24";
   }, [selectedDifficulty]);
 
-  const bgColor = "bg-transparent";
-
   return (
-    <div className={`relative h-screen flex items-center justify-center p-2 text-white overflow-hidden`}>
-      <div className="absolute inset-0 -z-20">
-        <div className="w-full h-full animate-gradient bg-[length:200%_200%] rounded-md"></div>
-      </div>
+    <div className="relative min-h-screen w-full flex items-center justify-center p-4 text-white overflow-hidden">
+      {/* 🎨 Cosmic Animated Background */}
+      <div className="cosmic-bg"></div>
+
+      {/* ✨ Floating Blur Orbs */}
+      <div className="floating-orb orb-1 opacity-20"></div>
+      <div className="floating-orb orb-2 opacity-25"></div>
+      <div className="floating-orb orb-3 opacity-15"></div>
 
       <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden">
-        {[...Array(20)].map((_, i) => {
+        {[...Array(15)].map((_, i) => {
           const style = {
             top: `${Math.random() * 100}%`,
             left: `${Math.random() * 100}%`,
             animationDelay: `${Math.random() * 5}s`,
             transform: `scale(${0.6 + Math.random() * 1.2})`,
-            opacity: 0.6 + Math.random() * 0.4,
+            opacity: 0.3 + Math.random() * 0.4,
           };
           return <div key={i} className="mm-sparkle" style={style} />;
         })}
@@ -883,51 +893,84 @@ const startRematch = () => {
 
       <div ref={particleContainer} className="absolute inset-0 pointer-events-none -z-5"></div>
 
-      <div className={`w-full h-full max-w-5xl flex flex-col justify-between ${bgColor} transition-colors duration-500`}>
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3">
-          <div className="flex items-center justify-between w-full sm:w-auto">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold">🧠 Memory Match</h1>
-              <p className="text-xs opacity-90">
-                {mode === "two" ? `Current Turn: ${currentPlayer === 1 ? "🔴 Red" : "🔵 Blue"}` : "Find all matching pairs!"}
-              </p>
-            </div>
+      <div className="w-full max-w-5xl flex flex-col justify-between min-h-[90vh] z-10">
+        {/* Sleek top header */}
+        <header className="glass-card-static px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 w-full mb-6">
+          <div>
+            <h1 className="text-xl md:text-2xl font-black tracking-tight bg-gradient-to-r from-white via-white to-white/70 bg-clip-text text-transparent">
+              🧠 Memory Match
+            </h1>
+            <p className="text-xs text-white/50">
+              {mode === "two"
+                ? "Pass & Play • Round Score"
+                : mode === "online"
+                ? `Online Match • Room: ${roomId}`
+                : "Single Player Campaign"}
+            </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 justify-end">
+          <div className="flex flex-wrap items-center gap-4 justify-end">
             {mode === "two" && (
-              <div className="flex flex-col text-sm sm:text-base font-semibold text-center">
-                <div 
-                  className="flex gap-4 justify-center px-4 py-2 rounded-2xl"
-                  style={{
-                    background: currentPlayer === 1 
-                      ? "rgba(248, 113, 113, 0.25)"
-                      : "rgba(59, 130, 246, 0.25)",
-                    backdropFilter: "blur(8px)",
-                    minWidth: "180px",
-                  }}
-                >
-                  <span className={`${currentPlayer === 1 ? "underline" : ""} text-red-100`}>🔴 Red: {playerScores[1]}</span>
-                  <span className={`${currentPlayer === 2 ? "underline" : ""} text-blue-100`}>🔵 Blue: {playerScores[2]}</span>
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center gap-3 bg-white/5 px-4 py-2 rounded-full border border-white/10 backdrop-blur-md">
+                  <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold transition-all ${currentPlayer === 1 ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_10px_rgba(244,63,94,0.3)]" : "text-white/60"}`}>
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                    Red: {playerScores[1]}
+                  </span>
+                  <span className="text-white/30 text-xs font-bold">VS</span>
+                  <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold transition-all ${currentPlayer === 2 ? "bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-[0_0_10px_rgba(59,130,246,0.3)]" : "text-white/60"}`}>
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                    Blue: {playerScores[2]}
+                  </span>
                 </div>
-                <div className="text-xs mt-1 opacity-90">🏆 Total Wins — 🔴 {totalWins.red} | 🔵 {totalWins.blue}</div>
+                <div className="text-[10px] uppercase tracking-wider text-white/40 mt-1">
+                  Series Score: Red {totalWins.red} — {totalWins.blue} Blue
+                </div>
               </div>
             )}
-            <div className="text-xs sm:text-sm text-right flex-shrink-0">
-              <div>Moves: <span className="font-semibold">{moves}</span></div>
-              <div>Time: <span className="font-semibold">{formatTime(seconds)}</span></div>
+
+            {mode === "online" && (
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center gap-3 bg-white/5 px-4 py-2 rounded-full border border-white/10 backdrop-blur-md">
+                  <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold transition-all ${isMyTurn ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.3)]" : "text-white/60"}`}>
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                    You: {onlineScores[userId] || 0}
+                  </span>
+                  <span className="text-white/30 text-xs font-bold">VS</span>
+                  <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold transition-all ${!isMyTurn ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_10px_rgba(6,182,212,0.3)]" : "text-white/60"}`}>
+                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-500"></span>
+                    Opponent: {Object.entries(onlineScores)
+                      .filter(([id]) => id !== userId)
+                      .reduce((sum, [_, score]) => sum + score, 0)}
+                  </span>
+                </div>
+                <div className="text-[10px] uppercase tracking-wider text-white/40 mt-1">
+                  {isMyTurn ? "🟢 Your Turn" : "⏳ Opponent's Turn"}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <div className="stat-badge">
+                <span className="opacity-60 text-[10px] uppercase tracking-wider">Moves</span>
+                <span className="text-cyan-400 font-extrabold">{moves}</span>
+              </div>
+              <div className="stat-badge">
+                <span className="opacity-60 text-[10px] uppercase tracking-wider">Time</span>
+                <span className="text-cyan-400 font-extrabold">{formatTime(seconds)}</span>
+              </div>
             </div>
 
             {mode === "single" && (
               <div className="relative">
                 <button
                   onClick={() => setOpenDropdown((prev) => !prev)}
-                  className="relative w-36 bg-white/15 backdrop-blur-md text-white font-semibold rounded-lg px-3 py-2 text-sm shadow-lg border border-white/30 hover:bg-white/25 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-pink-300 focus:scale-105 flex items-center justify-between"
+                  className="relative bg-white/10 backdrop-blur-md text-white font-semibold rounded-lg px-4 py-2 text-sm shadow-md border border-white/20 hover:bg-white/20 transition-all duration-300 focus:outline-none flex items-center gap-2"
                 >
-                  {selectedDifficulty === "easy" && "🌱 Easy (4x4)"}
-                  {selectedDifficulty === "medium" && "⚡ Medium (4x6)"}
-                  {selectedDifficulty === "hard" && "🔥 Hard (6x8)"}
-                  <span className="text-white/80 text-xs">▼</span>
+                  {selectedDifficulty === "easy" && "🌱 Easy"}
+                  {selectedDifficulty === "medium" && "⚡ Medium"}
+                  {selectedDifficulty === "hard" && "🔥 Hard"}
+                  <span className="text-white/50 text-[10px]">▼</span>
                 </button>
 
                 <AnimatePresence>
@@ -937,7 +980,7 @@ const startRematch = () => {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}
                       transition={{ duration: 0.2 }}
-                      className="absolute z-50 w-36 mt-2 rounded-lg overflow-hidden bg-white/20 backdrop-blur-lg border border-white/30 shadow-xl"
+                      className="absolute right-0 z-50 w-36 mt-2 rounded-lg overflow-hidden bg-slate-900/95 backdrop-blur-lg border border-white/10 shadow-xl"
                     >
                       {[
                         { value: "easy", label: "🌱 Easy (4x4)" },
@@ -950,8 +993,8 @@ const startRematch = () => {
                             setSelectedDifficulty(opt.value);
                             setOpenDropdown(false);
                           }}
-                          className={`px-3 py-2 text-sm text-white cursor-pointer transition-all duration-200 hover:bg-white/30 ${
-                            selectedDifficulty === opt.value ? "bg-white/25" : ""
+                          className={`px-4 py-2.5 text-sm text-white cursor-pointer transition-all duration-200 hover:bg-white/10 ${
+                            selectedDifficulty === opt.value ? "bg-white/15 font-bold" : ""
                           }`}
                         >
                           {opt.label}
@@ -960,46 +1003,21 @@ const startRematch = () => {
                     </motion.ul>
                   )}
                 </AnimatePresence>
-
-                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 animate-gradient-x opacity-50 blur-sm pointer-events-none"></div>
               </div>
             )}
 
-            <button onClick={restart} className="bg-white text-indigo-700 px-3 py-1 rounded font-medium shadow text-sm">Restart</button>
-            <button onClick={handleBack} className="bg-white text-red-600 px-3 py-1 rounded font-medium shadow text-sm">← Back</button>
-            <button onClick={toggleMusic} className="bg-white text-indigo-700 px-3 py-1 rounded font-medium shadow text-sm">
-              {musicOn ? "🔊 Music On" : "🔇 Music Off"}
-            </button>
-          </div>
-          {mode === "online" && (
-            <div className="flex flex-col text-sm sm:text-base font-semibold text-center">
-              <div 
-                className="flex gap-4 justify-center px-4 py-2 rounded-2xl"
-                style={{
-                  background: isMyTurn 
-                    ? "rgba(34, 197, 94, 0.25)"
-                    : "rgba(148, 163, 184, 0.25)",
-                  backdropFilter: "blur(8px)",
-                  minWidth: "180px",
-                }}
-              >
-                <span className={`${isMyTurn ? "underline" : ""} text-green-100`}>
-                  🟢 You: {onlineScores[userId] || 0}
-                </span>
-                <span className={`${!isMyTurn ? "underline" : ""} text-blue-100`}>
-                  🔵 Opponent: {Object.entries(onlineScores)
-                    .filter(([id]) => id !== userId)
-                    .reduce((sum, [_, score]) => sum + score, 0)}
-                </span>
-              </div>
-              <div className="text-xs mt-1 opacity-90">
-                {isMyTurn ? "🎮 Your Turn" : "⏳ Opponent's Turn"}
-              </div>
+            <div className="flex gap-2">
+              <button onClick={restart} className="btn-secondary px-3 py-1.5 text-xs">🔄 Restart</button>
+              <button onClick={handleBack} className="btn-danger px-3 py-1.5 text-xs">← Exit</button>
+              <button onClick={toggleMusic} className="btn-secondary px-3 py-1.5 text-xs">
+                {musicOn ? "🔊 Music" : "🔇 Music"}
+              </button>
             </div>
-          )}
+          </div>
         </header>
 
-        <section className={`grid ${gridCols} gap-1.5 sm:gap-2 md:gap-3 justify-items-center content-center flex-1 [perspective:1200px] my-1 ${selectedDifficulty === "hard" ? "max-w-[360px] sm:max-w-[500px] md:max-w-none mx-auto" : ""}`}>
+        {/* Card grid section */}
+        <section className={`grid ${gridCols} gap-2 sm:gap-3 md:gap-4 justify-items-center content-center flex-1 my-4 ${selectedDifficulty === "hard" ? "max-w-[360px] sm:max-w-[500px] md:max-w-none mx-auto" : ""}`}>
           {cards.map((card, idx) => {
             const isFlipped = flipped.includes(idx) || matchedIds.has(card.uuid);
             return (
@@ -1007,16 +1025,16 @@ const startRematch = () => {
                 key={card.id}
                 data-card-uuid={card.uuid}
                 onClick={() => handleFlip(idx)}
-                className={`${cardSize} cursor-pointer transform transition-transform duration-300 hover:scale-105`}
+                className={`game-card ${cardSize} ${matchedIds.has(card.uuid) ? "matched" : ""}`}
               >
-                <div className={`relative w-full h-full transition-transform [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}
-                style={{ 
-                  transitionDuration: `${mode === "online" ? ONLINE_FLIP_DURATION : LOCAL_FLIP_DURATION}ms` 
-                }}
+                <div
+                  className={`game-card-inner ${isFlipped ? "flipped" : ""} ${
+                    mode === "online" ? "online-speed" : ""
+                  }`}
                 >
-                  <div className="absolute inset-0 rounded-lg flex items-center justify-center text-base sm:text-lg md:text-xl lg:text-2xl select-none [backface-visibility:hidden] [transform:rotateY(0deg)] bg-white/10 border border-white/10">❓</div>
-                  <div className="absolute inset-0 rounded-lg flex items-center justify-center text-lg sm:text-xl md:text-2xl lg:text-3xl select-none [backface-visibility:hidden] [transform:rotateY(180deg)] bg-white text-gray-900 shadow-lg">
-                    {card.emoji}
+                  <div className="game-card-face game-card-back">❓</div>
+                  <div className="game-card-face game-card-front">
+                    <span className="card-emoji">{card.emoji}</span>
                   </div>
                 </div>
               </div>
@@ -1024,231 +1042,247 @@ const startRematch = () => {
           })}
         </section>
 
-        <footer className="flex items-center justify-between text-xs mt-2 sm:mt-0">
+        {/* Footer */}
+        <footer className="flex items-center justify-between text-xs mt-4 border-t border-white/5 pt-4">
           {mode === "single" ? (
             <div>
-              <p>Best ({selectedDifficulty}):</p>
+              <p className="text-white/40">Best Score ({selectedDifficulty}):</p>
               {bestScores[selectedDifficulty] ? (
-                <div>
-                  <span className="font-semibold">{bestScores[selectedDifficulty].moves} moves</span> • {formatTime(bestScores[selectedDifficulty].time)}
+                <div className="text-white/80 mt-0.5">
+                  <span className="font-semibold text-cyan-400">{bestScores[selectedDifficulty].moves} moves</span> • {formatTime(bestScores[selectedDifficulty].time)}
                 </div>
-              ) : <div className="opacity-90">No record yet</div>}
+              ) : (
+                <div className="text-white/40 mt-0.5">No records set yet</div>
+              )}
             </div>
-          ) : <div />}
+          ) : (
+            <div />
+          )}
 
-          <div className="opacity-80 text-right">Made with ❤️</div>
+          <div className="text-white/30 text-right">Made with ❤️</div>
         </footer>
 
+        {/* Game over modal */}
         {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
-          <div className="bg-white rounded-lg p-6 w-80 sm:w-96 text-center text-gray-900 animate-scale-in">
-            <h2 className="text-2xl font-bold mb-2">
-              {mode === "online"
-                ? winner === "you"
-                  ? "🏆 You Won!"
-                  : winner === "opponent"
-                    ? "😢 You Lost!"
-                    : "🤝 Draw!"
-                : mode === "two"
-                  ? winner === "draw"
-                    ? "🤝 Draw!"
-                    : winner === "red"
-                      ? "🏆 🔴 Red Wins!"
-                      : "🏆 🔵 Blue Wins!"
-                  : "🎉 You Won!"}
-            </h2>
-            
-            {mode === "online" && (
-              <p className="mb-2 text-sm opacity-90">
-                Scores - You: {onlineScores[userId] || 0} | Opponent: {
-                  Object.entries(onlineScores)
-                    .filter(([id]) => id !== userId)
-                    .reduce((sum, [_, score]) => sum + score, 0)
-                }
-              </p>
-            )}
-
-            <p className="mb-2 text-sm opacity-90">Moves: {moves} • Time: {formatTime(seconds)}</p>
-
-            {mode === "single" && (
-              <>
-                <p className="text-sm mb-2">Enter your name for the leaderboard:</p>
-                <input
-                  type="text"
-                  value={playerName}
-                  onChange={(e) => setPlayerName(e.target.value.slice(0, 15))}
-                  placeholder="Your name"
-                  className="w-full px-3 py-2 border rounded mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </>
-            )}
-
-            <div className="flex flex-col sm:flex-row justify-center gap-3 mt-2">
-              {mode === "single" && (
-                <button
-                  onClick={async () => {
-                    if (!playerName.trim() || submitting) return;
-                    setSubmitting(true);
-                    try {
-                      const res = await fetch("/api/leaderboard", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          player: playerName.trim(),
-                          difficulty: selectedDifficulty,
-                          moves,
-                          time: seconds,
-                        }),
-                      });
-                      if (!res.ok) throw new Error("Failed to submit score");
-                      router.push("/leaderboard");
-                    } catch (err) {
-                      alert("Could not save your score. Please try again!");
-                      console.error(err);
-                    } finally {
-                      setSubmitting(false);
-                    }
-                  }}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700 transition"
-                >
-                  {submitting ? "Submitting..." : "Submit"}
-                </button>
+          <div className="modal-overlay">
+            <div className="modal-card">
+              <div className="text-5xl mb-4 animate-bounce">🏆</div>
+              <h2 className="text-3xl font-extrabold mb-2 text-white">
+                {mode === "online"
+                  ? winner === "you"
+                    ? "Victory!"
+                    : winner === "opponent"
+                      ? "Defeat"
+                      : "It's a Draw!"
+                  : mode === "two"
+                    ? winner === "draw"
+                      ? "It's a Draw!"
+                      : winner === "red"
+                        ? "Red Wins!"
+                        : "Blue Wins!"
+                    : "Clear!"}
+              </h2>
+              
+              {mode === "online" && (
+                <p className="mb-4 text-white/70 text-sm">
+                  Scores &mdash; You: <span className="text-emerald-400 font-bold">{onlineScores[userId] || 0}</span> | Opponent: <span className="text-cyan-400 font-bold">{
+                    Object.entries(onlineScores)
+                      .filter(([id]) => id !== userId)
+                      .reduce((sum, [_, score]) => sum + score, 0)
+                  }</span>
+                </p>
               )}
 
-              <button
-                onClick={restart}
-                className="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700 transition"
-              >
-                Play Again
-              </button>
+              {mode === "two" && (
+                <p className="mb-4 text-white/70 text-sm">
+                  Round Stats &mdash; Red: <span className="text-rose-400 font-bold">{playerScores[1]}</span> | Blue: <span className="text-blue-400 font-bold">{playerScores[2]}</span>
+                </p>
+              )}
 
-              <button
-                onClick={handleBack}
-                className="bg-red-600 text-white px-4 py-2 rounded font-medium hover:bg-red-700 transition"
-              >
-                Exit to Menu
-              </button>
+              <div className="bg-white/5 rounded-xl p-4 mb-6 border border-white/5 text-left flex flex-col gap-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/60">Total Moves:</span>
+                  <span className="text-white font-bold">{moves}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/60">Total Time:</span>
+                  <span className="text-white font-bold">{formatTime(seconds)}</span>
+                </div>
+              </div>
+
+              {mode === "single" && (
+                <div className="mb-6 text-left">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-white/50 mb-2">
+                    Enter Name for Leaderboard
+                  </label>
+                  <input
+                    type="text"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value.slice(0, 15))}
+                    placeholder="Enter your name..."
+                    className="glass-input"
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 mt-4">
+                {mode === "single" && (
+                  <button
+                    onClick={async () => {
+                      if (!playerName.trim() || submitting) return;
+                      setSubmitting(true);
+                      try {
+                        const res = await fetch("/api/leaderboard", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            player: playerName.trim(),
+                            difficulty: selectedDifficulty,
+                            moves,
+                            time: seconds,
+                          }),
+                        });
+                        if (!res.ok) throw new Error("Failed to submit score");
+                        router.push("/leaderboard");
+                      } catch (err) {
+                        alert("Could not save your score. Please try again!");
+                        console.error(err);
+                      } finally {
+                        setSubmitting(false);
+                      }
+                    }}
+                    disabled={!playerName.trim()}
+                    className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submitting ? "Submitting..." : "Submit to Leaderboard"}
+                  </button>
+                )}
+
+                <button
+                  onClick={restart}
+                  className="btn-primary w-full"
+                >
+                  Play Again
+                </button>
+
+                <button
+                  onClick={handleBack}
+                  className="btn-secondary w-full"
+                >
+                  Exit to Menu
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {showRematchModal && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
-        <div className="bg-white rounded-lg p-6 w-80 sm:w-96 text-center text-gray-900 animate-scale-in">
-          <h2 className="text-2xl font-bold mb-4">🔄 Play Again?</h2>
-          
-          {rematchRequested && !opponentRematchRequested && (
-            <div>
-              <p className="mb-4">Waiting for opponent to accept rematch...</p>
-              <div className="animate-pulse">⏳</div>
-              <button
-                onClick={() => setShowRematchModal(false)}
-                className="mt-4 bg-gray-600 text-white px-4 py-2 rounded font-medium hover:bg-gray-700 transition"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-          
-          {!rematchRequested && opponentRematchRequested && (
-            <div>
-              <p className="mb-4">Your opponent wants to play again!</p>
-              <button
-                onClick={() => {
-                  setRematchRequested(true);
-                  // Send our rematch request
-                  fetch('/api/rooms', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                      action: 'rematch-request',
-                      roomCode: roomId,
-                      senderId: userId
-                    }),
-                  }).catch(error => {
-                    console.error('Error sending rematch request:', error);
-                  });
-                  
-                  // Auto-start rematch when both players have requested
-                  setTimeout(() => {
-                    if (isHost) {
-                      startRematch();
-                    }
-                  }, 1000);
-                }}
-                className="bg-green-600 text-white px-4 py-2 rounded font-medium hover:bg-green-700 transition mr-2"
-              >
-                Accept Rematch
-              </button>
-              <button
-                onClick={() => {
-                  setShowRematchModal(false);
-                  setOpponentRematchRequested(false);
-                }}
-                className="bg-gray-600 text-white px-4 py-2 rounded font-medium hover:bg-gray-700 transition"
-              >
-                Decline
-              </button>
-            </div>
-          )}
-          
-          {rematchRequested && opponentRematchRequested && (
-            <div>
-              <p className="mb-4">Starting new game...</p>
-              <div className="animate-spin">🎮</div>
-              {isHost && (
-                <p className="text-sm mt-2 text-green-600">Host is starting the game...</p>
+        {/* Rematch Modal */}
+        {showRematchModal && (
+          <div className="modal-overlay">
+            <div className="modal-card">
+              <h2 className="text-2xl font-extrabold mb-4 text-white">🔄 Play Again?</h2>
+              
+              {rematchRequested && !opponentRematchRequested && (
+                <div className="flex flex-col items-center">
+                  <p className="mb-6 text-white/70 text-sm">Waiting for opponent to accept rematch...</p>
+                  <div className="pulse-dots mb-8">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  <button
+                    onClick={() => setShowRematchModal(false)}
+                    className="btn-secondary w-full"
+                  >
+                    Cancel
+                  </button>
+                </div>
               )}
-              {!isHost && (
-                <p className="text-sm mt-2 text-blue-600">Waiting for host to start the game...</p>
+              
+              {!rematchRequested && opponentRematchRequested && (
+                <div>
+                  <p className="mb-6 text-white/70 text-sm">Your opponent wants to play again!</p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setRematchRequested(true);
+                        fetch('/api/rooms', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            action: 'rematch-request',
+                            roomCode: roomId,
+                            senderId: userId
+                          }),
+                        }).catch(error => {
+                          console.error('Error sending rematch request:', error);
+                        });
+                        
+                        setTimeout(() => {
+                          if (isHost) {
+                            startRematch();
+                          }
+                        }, 1000);
+                      }}
+                      className="btn-primary flex-1"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowRematchModal(false);
+                        setOpponentRematchRequested(false);
+                      }}
+                      className="btn-secondary flex-1"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {rematchRequested && opponentRematchRequested && (
+                <div className="flex flex-col items-center">
+                  <p className="mb-6 text-white/70 text-sm">Starting new game...</p>
+                  <div className="pulse-dots mb-8">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  {isHost && (
+                    <p className="text-xs text-emerald-400 font-bold">Host is starting the game...</p>
+                  )}
+                  {!isHost && (
+                    <p className="text-xs text-cyan-400 font-bold">Waiting for host to start...</p>
+                  )}
+                </div>
+              )}
+              
+              {!rematchRequested && !opponentRematchRequested && (
+                <div>
+                  <p className="mb-6 text-white/70 text-sm">Would you like to request a rematch?</p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={restart}
+                      className="btn-primary flex-1"
+                    >
+                      Rematch
+                    </button>
+                    <button
+                      onClick={() => setShowRematchModal(false)}
+                      className="btn-secondary flex-1"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
-          )}
-          
-          {!rematchRequested && !opponentRematchRequested && (
-            <div>
-              <p className="mb-4">Would you like to play again?</p>
-              <button
-                onClick={restart}
-                className="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700 transition mr-2"
-              >
-                Play Again
-              </button>
-              <button
-                onClick={() => setShowRematchModal(false)}
-                className="bg-gray-600 text-white px-4 py-2 rounded font-medium hover:bg-gray-700 transition"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
-    )}
-      </div>
-
-      <style jsx>{`
-        .animate-gradient {
-          background: linear-gradient(120deg, #4f46e5 0%, #7c3aed 35%, #ec4899 70%);
-          width: 100%;
-          height: 100%;
-          background-size: 200% 200%;
-          animation: mmGradient 12s ease infinite;
-        }
-        @keyframes mmGradient {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        .mm-sparkle { position: absolute; width: 6px; height: 6px; border-radius: 999px; background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), rgba(255,255,255,0.7) 40%, rgba(255,255,255,0.1) 60%); filter: blur(0.6px); animation: mmFloat 6s linear infinite; }
-        @keyframes mmFloat { 0% { transform: translateY(0) scale(1); opacity: 0; } 10% { opacity: 0.8; } 50% { transform: translateY(-18px) scale(1.05); opacity: 0.9; } 100% { transform: translateY(-40px) scale(0.9); opacity: 0; } }
-        .mm-particle { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, rgba(255,255,255,1), rgba(255,255,255,0.8) 40%, rgba(255,255,255,0.2) 80%); pointer-events: none; will-change: transform, opacity; }
-        @keyframes scaleIn { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .animate-scale-in { animation: scaleIn 240ms ease both; }
-      `}</style>
     </div>
   );
 }

@@ -14,9 +14,27 @@ export default function MemoryHome() {
   const [difficulty, setDifficulty] = useState(null);
   const [view, setView] = useState("home"); // "home" | "difficulty" | "game" | "leaderboard"
 
-  const fadeUp = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 },
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+      },
+    },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 30 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        type: "spring",
+        stiffness: 100,
+        damping: 15,
+      },
+    },
   };
 
   const handleModeSelect = (selectedMode) => {
@@ -31,81 +49,118 @@ export default function MemoryHome() {
   };
 
   return (
-    <div className="h-screen flex flex-col items-center justify-center relative overflow-hidden text-white">
-      {/* 🎨 Animated Gradient Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 animate-gradient-x"></div>
+    <div className="min-h-screen w-full flex flex-col items-center justify-center relative overflow-x-hidden text-white py-12 px-4">
+      {/* 🎨 Cosmic Animated Background */}
+      <div className="cosmic-bg"></div>
 
       {/* ✨ Floating Blur Orbs */}
-      <div className="absolute w-72 h-72 bg-pink-500/30 rounded-full blur-3xl top-10 left-10 animate-pulse"></div>
-      <div className="absolute w-72 h-72 bg-indigo-500/30 rounded-full blur-3xl bottom-10 right-10 animate-pulse"></div>
+      <div className="floating-orb orb-1"></div>
+      <div className="floating-orb orb-2"></div>
+      <div className="floating-orb orb-3"></div>
 
       <AnimatePresence mode="wait">
         {/* 🏠 HOME SCREEN */}
         {view === "home" && (
           <motion.div
             key="home"
+            variants={containerVariants}
             initial="hidden"
             animate="visible"
-            exit={{ opacity: 0, y: -20 }}
-            variants={fadeUp}
-            transition={{ duration: 0.6 }}
-            className="z-10 flex flex-col items-center text-center"
+            exit={{ opacity: 0, y: -20, transition: { duration: 0.3 } }}
+            className="z-10 flex flex-col items-center text-center max-w-4xl w-full"
           >
-            <motion.h1
-              className="text-5xl font-extrabold mb-4 tracking-wide drop-shadow-lg"
-              variants={fadeUp}
-            >
-              🧠 Memory Match
-            </motion.h1>
-            <motion.p
-              className="text-lg mb-8 text-white/90"
-              variants={fadeUp}
-              transition={{ delay: 0.2 }}
-            >
-              Test your memory — solo or with a friend!
-            </motion.p>
-
+            {/* Logo Area */}
             <motion.div
-              className="flex gap-6"
-              variants={fadeUp}
-              transition={{ delay: 0.3 }}
+              className="mb-8 flex flex-col items-center"
+              variants={itemVariants}
+            >
+              <motion.span
+                className="text-7xl md:text-8xl mb-4 inline-block drop-shadow-[0_0_35px_rgba(139,92,246,0.6)]"
+                animate={{
+                  y: [0, -10, 0],
+                  scale: [1, 1.03, 1]
+                }}
+                transition={{
+                  duration: 4,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              >
+                🧠
+              </motion.span>
+              <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight neon-text-gradient drop-shadow-[0_2px_15px_rgba(0,0,0,0.5)]">
+                Memory Match
+              </h1>
+              <p className="text-base md:text-lg mt-4 text-white/70 max-w-md">
+                An ultra-premium memory challenge. Play solo, local pass-and-play, or online multiplayer!
+              </p>
+            </motion.div>
+
+            {/* Mode Selection Grid */}
+            <motion.div
+              className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl w-full px-4 mt-4"
+              variants={itemVariants}
             >
               <button
                 onClick={() => handleModeSelect("single")}
-                className="relative group px-8 py-3 rounded-xl bg-white/15 backdrop-blur-md text-white font-semibold border border-white/30 shadow-lg overflow-hidden transition-all duration-300 hover:scale-105"
+                className="glass-card p-6 text-left flex flex-col items-start hover:border-[rgba(6,182,212,0.4)] group transition-all duration-300"
               >
-                <span className="relative z-10">🎮 1 Player</span>
-                <div className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 opacity-0 group-hover:opacity-40 transition-all duration-300"></div>
+                <div className="text-3xl mb-4 p-3 bg-cyan-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
+                  🎮
+                </div>
+                <h3 className="text-xl font-bold text-white mb-1 group-hover:text-cyan-400 transition-colors">
+                  Solo Campaign
+                </h3>
+                <p className="text-sm text-white/60">
+                  Train your mind, track your moves, and beat your best records.
+                </p>
               </button>
 
               <button
                 onClick={() => handleModeSelect("two")}
-                className="relative group px-8 py-3 rounded-xl bg-white/15 backdrop-blur-md text-white font-semibold border border-white/30 shadow-lg overflow-hidden transition-all duration-300 hover:scale-105"
+                className="glass-card p-6 text-left flex flex-col items-start hover:border-[rgba(139,92,246,0.4)] group transition-all duration-300"
               >
-                <span className="relative z-10">🤝 2 Players</span>
-                <div className="absolute inset-0 bg-gradient-to-r from-purple-500 via-indigo-500 to-pink-500 opacity-0 group-hover:opacity-40 transition-all duration-300"></div>
+                <div className="text-3xl mb-4 p-3 bg-violet-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
+                  🤝
+                </div>
+                <h3 className="text-xl font-bold text-white mb-1 group-hover:text-violet-400 transition-colors">
+                  Versus Mode
+                </h3>
+                <p className="text-sm text-white/60">
+                  Challenge a friend next to you in turn-based competitive action.
+                </p>
+              </button>
+
+              <button
+                onClick={() => router.push("/online")}
+                className="glass-card p-6 text-left flex flex-col items-start hover:border-[rgba(16,185,129,0.4)] group transition-all duration-300"
+              >
+                <div className="text-3xl mb-4 p-3 bg-emerald-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
+                  🌐
+                </div>
+                <h3 className="text-xl font-bold text-white mb-1 group-hover:text-emerald-400 transition-colors">
+                  Online Arena
+                </h3>
+                <p className="text-sm text-white/60">
+                  Host or join private rooms to match against players worldwide.
+                </p>
+              </button>
+
+              <button
+                onClick={() => router.push("/leaderboard")}
+                className="glass-card p-6 text-left flex flex-col items-start hover:border-[rgba(245,158,11,0.4)] group transition-all duration-300"
+              >
+                <div className="text-3xl mb-4 p-3 bg-amber-500/10 rounded-xl group-hover:scale-110 transition-transform duration-300">
+                  🏆
+                </div>
+                <h3 className="text-xl font-bold text-white mb-1 group-hover:text-amber-400 transition-colors">
+                  Leaderboard
+                </h3>
+                <p className="text-sm text-white/60">
+                  Behold the top champions and check the ultimate high scores.
+                </p>
               </button>
             </motion.div>
-
-            {/* 🏆 Leaderboard Button */}
-            <motion.button
-              onClick={() => router.push("/online")}
-              className="mt-8 px-6 py-2 bg-white/20 border border-white/30 rounded-lg backdrop-blur-md text-white/90 font-medium hover:bg-white/30 hover:scale-105 transition-all"
-            >
-              <span className="relative z-10">🌐 Online Multiplayer</span>
-              <div className="absolute inset-0 bg-gradient-to-r from-green-500 via-teal-500 to-blue-500 opacity-0 group-hover:opacity-40 transition-all duration-300"></div>
-            </motion.button>
-            
-            <motion.button
-              onClick={() => router.push("/leaderboard")}
-              className="mt-8 px-6 py-2 bg-white/20 border border-white/30 rounded-lg backdrop-blur-md text-white/90 font-medium hover:bg-white/30 hover:scale-105 transition-all"
-              variants={fadeUp}
-              transition={{ delay: 0.4 }}
-            >
-              🏆 View Leaderboard
-            </motion.button>
-
-
           </motion.div>
         )}
 
@@ -113,51 +168,80 @@ export default function MemoryHome() {
         {view === "difficulty" && (
           <motion.div
             key="difficulty"
+            variants={containerVariants}
             initial="hidden"
             animate="visible"
-            exit={{ opacity: 0, y: -20 }}
-            variants={fadeUp}
-            transition={{ duration: 0.6 }}
-            className="z-10 flex flex-col items-center text-center"
+            exit={{ opacity: 0, y: -20, transition: { duration: 0.3 } }}
+            className="z-10 flex flex-col items-center text-center max-w-2xl w-full px-4"
           >
-            <motion.h1
-              className="text-4xl font-bold mb-6"
-              variants={fadeUp}
-              transition={{ delay: 0.2 }}
+            <motion.h2
+              className="text-4xl md:text-5xl font-extrabold tracking-wide text-white mb-2"
+              variants={itemVariants}
             >
-              Select Difficulty
-            </motion.h1>
+              Choose Difficulty
+            </motion.h2>
+            <motion.p
+              className="text-white/60 mb-8 max-w-md"
+              variants={itemVariants}
+            >
+              Select your grid configuration. Larger boards require deeper concentration.
+            </motion.p>
 
             <motion.div
-              className="flex flex-col sm:flex-row gap-6"
-              variants={fadeUp}
-              transition={{ delay: 0.3 }}
+              className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full mb-8"
+              variants={itemVariants}
             >
               {[
-                { level: "easy", label: "🌱 Easy (4x4)" },
-                { level: "medium", label: "⚡ Medium (4x6)" },
-                { level: "hard", label: "🔥 Hard (6x8)" },
-              ].map(({ level, label }) => (
+                {
+                  level: "easy",
+                  title: "Easy",
+                  grid: "4 × 4",
+                  desc: "16 Cards • Chill",
+                  emoji: "🌱",
+                  borderClass: "hover:border-[rgba(16,185,129,0.4)] group-hover:text-emerald-400"
+                },
+                {
+                  level: "medium",
+                  title: "Medium",
+                  grid: "4 × 6",
+                  desc: "24 Cards • Regular",
+                  emoji: "⚡",
+                  borderClass: "hover:border-[rgba(245,158,11,0.4)] group-hover:text-amber-400"
+                },
+                {
+                  level: "hard",
+                  title: "Hard",
+                  grid: "6 × 8",
+                  desc: "48 Cards • Extreme",
+                  emoji: "🔥",
+                  borderClass: "hover:border-[rgba(244,63,94,0.4)] group-hover:text-rose-400"
+                },
+              ].map(({ level, title, grid, desc, emoji, borderClass }) => (
                 <button
                   key={level}
                   onClick={() => startGame(mode, level)}
-                  className="relative group px-6 py-3 rounded-xl bg-white/15 backdrop-blur-md text-white font-semibold border border-white/30 shadow-lg overflow-hidden transition-all duration-300 hover:scale-105"
+                  className={`glass-card p-6 flex flex-col items-center justify-center text-center transition-all duration-300 group ${borderClass}`}
                 >
-                  <span className="relative z-10">{label}</span>
-                  <div className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 opacity-0 group-hover:opacity-40 transition-all duration-300"></div>
+                  <span className="text-3xl mb-3 transform group-hover:scale-125 transition-transform duration-300">
+                    {emoji}
+                  </span>
+                  <span className="text-xl font-bold text-white">{title}</span>
+                  <span className="text-2xl font-black text-cyan-400 mt-1">{grid}</span>
+                  <span className="text-xs text-white/50 mt-2">{desc}</span>
                 </button>
               ))}
             </motion.div>
 
-            <button
+            <motion.button
+              variants={itemVariants}
               onClick={() => {
                 setView("home");
                 setMode(null);
               }}
-              className="mt-8 text-sm text-white/70 hover:text-white transition"
+              className="btn-secondary mt-4"
             >
-              ← Back
-            </button>
+              ← Back to Main Menu
+            </motion.button>
           </motion.div>
         )}
 
@@ -191,3 +275,4 @@ export default function MemoryHome() {
     </div>
   );
 }
+

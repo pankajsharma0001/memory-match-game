@@ -1,6 +1,7 @@
 // pages/online.js - UPDATED FOR PUSHER
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import { motion } from "framer-motion";
 import { getPusherClient } from "../lib/pusher-client";
 
 export default function Online() {
@@ -108,58 +109,102 @@ export default function Online() {
   };
 
   return (
-    <div className="h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white text-center">
-      <h1 className="text-4xl font-bold mb-6">🌐 Online Multiplayer</h1>
+    <div className="min-h-screen w-full flex flex-col items-center justify-center relative overflow-hidden text-white py-12 px-4">
+      {/* 🎨 Cosmic Animated Background */}
+      <div className="cosmic-bg"></div>
 
-      {isConnected && (
-        <div className="mb-4 text-green-200">
-          ✅ Connected to server
-        </div>
-      )}
+      {/* ✨ Floating Blur Orbs */}
+      <div className="floating-orb orb-1 opacity-20"></div>
+      <div className="floating-orb orb-2 opacity-25"></div>
+      <div className="floating-orb orb-3 opacity-15"></div>
 
-      <button 
-        onClick={createRoom} 
-        className="bg-green-500 px-6 py-3 rounded-lg mb-4 font-semibold hover:bg-green-600 transition"
-      >
-        Create Room
-      </button>
-
-      <div className="flex gap-3 items-center">
-        <input
-          value={roomId}
-          onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-          placeholder="Enter room code"
-          className="px-3 py-2 rounded text-black"
-          maxLength={4}
-        />
-        <button 
-          onClick={joinRoom} 
-          className="bg-blue-500 px-4 py-2 rounded-lg hover:bg-blue-600 transition"
-        >
-          Join
-        </button>
+      {/* Connection status badge */}
+      <div className="absolute top-6 right-6 z-20 flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full backdrop-blur-md">
+        <span className={`status-dot ${isConnected ? "connected" : "connecting"}`}></span>
+        <span className="text-xs text-white/70 font-semibold">
+          {isConnected ? "Connected to server" : "Connecting..."}
+        </span>
       </div>
 
-      {error && (
-        <div className="mt-4">
-          <p className="text-red-200 bg-red-900/30 px-4 py-2 rounded mb-2">
-            {error}
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="z-10 w-full max-w-md"
+      >
+        <div className="glass-card-static p-8 text-center flex flex-col items-center shadow-2xl">
+          <div className="text-6xl mb-4 animate-pulse">🌐</div>
+          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 via-violet-400 to-rose-400 bg-clip-text text-transparent mb-2">
+            Online Arena
+          </h1>
+          <p className="text-white/60 text-sm mb-8">
+            Create a private lobby or enter a code to match against a friend in real time.
           </p>
+
+          {/* Action cards or buttons */}
+          <div className="w-full flex flex-col gap-6">
+            <button
+              onClick={createRoom}
+              className="btn-primary w-full py-3.5 text-base flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(139,92,246,0.3)]"
+            >
+              <span>✨ Create New Room</span>
+            </button>
+
+            <div className="relative flex items-center justify-center my-2">
+              <span className="absolute bg-[#0f172a] px-3 text-xs uppercase tracking-widest text-white/40 font-bold border border-white/5 rounded-full">
+                OR
+              </span>
+              <div className="w-full border-t border-white/10"></div>
+            </div>
+
+            <div className="flex flex-col gap-3 text-left">
+              <label className="text-xs font-bold uppercase tracking-wider text-white/50 ml-1">
+                Enter Room Code
+              </label>
+              <div className="flex gap-2">
+                <input
+                  value={roomId}
+                  onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+                  placeholder="CODE"
+                  className="glass-input text-center text-lg font-black tracking-widest"
+                  maxLength={4}
+                />
+                <button
+                  onClick={joinRoom}
+                  className="btn-secondary px-6 font-bold flex items-center gap-1.5"
+                >
+                  Join
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-6 w-full"
+            >
+              <div className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 px-4 py-3 rounded-lg flex flex-col gap-2 items-center">
+                <p>{error}</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="text-xs underline text-rose-200 hover:text-white"
+                >
+                  Click here to refresh and retry
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           <button
-            onClick={() => window.location.reload()}
-            className="text-sm bg-yellow-500 px-3 py-1 rounded hover:bg-yellow-600"
+            onClick={() => router.push("/memoryHome")}
+            className="mt-8 text-sm text-white/50 hover:text-white transition flex items-center gap-1.5"
           >
-            Retry
+            ← Exit to Main Menu
           </button>
         </div>
-      )}
-
-      <button 
-        onClick={() => router.push("/memoryHome")} 
-        className="mt-6 text-white/80 hover:text-white"
-      >
-        ← Back
-      </button>
+      </motion.div>
     </div>
   );
 }

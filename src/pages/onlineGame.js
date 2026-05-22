@@ -1,6 +1,7 @@
 // pages/onlineGame.js - UPDATED EVENT BINDINGS
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import { motion } from "framer-motion";
 import { getPusherClient } from "../lib/pusher-client";
 import MemoryMatch from "./memory";
 
@@ -14,7 +15,8 @@ export default function OnlineGame() {
   const [opponentDisconnected, setOpponentDisconnected] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState('connecting'); // Add this state
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!room || !userId) return;
@@ -147,6 +149,13 @@ export default function OnlineGame() {
     });
   };
 
+  const copyToClipboard = () => {
+    if (!room) return;
+    navigator.clipboard.writeText(room);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   // DEBUG: Log important state changes
   useEffect(() => {
     console.log('🔄 OnlineGame State:', {
@@ -157,71 +166,137 @@ export default function OnlineGame() {
       opponentJoined,
       channel: !!channel,
       isLoading,
-      connectionStatus // Add connection status to debug logs
+      connectionStatus
     });
   }, [room, userId, isHost, gameStarted, opponentJoined, channel, isLoading, connectionStatus]);
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white">
-        <div className="text-xl mb-4">Loading game...</div>
-        <div className="animate-spin">🎮</div>
-        <div className="text-sm mt-2">Status: {connectionStatus}</div>
+      <div className="min-h-screen w-full flex flex-col items-center justify-center relative overflow-hidden text-white py-12 px-4 text-center">
+        <div className="cosmic-bg"></div>
+        <div className="floating-orb orb-1 opacity-20"></div>
+        <div className="floating-orb orb-2 opacity-25"></div>
+        <div className="floating-orb orb-3 opacity-15"></div>
+
+        <div className="glass-card-static p-8 max-w-sm w-full flex flex-col items-center shadow-2xl z-10">
+          <div className="pulse-dots mb-6">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <h2 className="text-xl font-bold mb-2">Connecting to Arena...</h2>
+          <p className="text-xs text-white/50 mb-4">Establishing secure connection</p>
+          <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full">
+            <span className="status-dot connecting"></span>
+            <span className="text-[10px] uppercase font-bold text-white/70 tracking-wider">Status: {connectionStatus}</span>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (opponentDisconnected) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white text-center">
-        <h1 className="text-3xl font-bold mb-4">😢 Opponent Disconnected</h1>
-        <button onClick={() => router.push("/memoryHome")} className="bg-white text-indigo-600 px-6 py-3 rounded-lg font-semibold hover:bg-indigo-50 transition">
-          Return to Menu
-        </button>
+      <div className="min-h-screen w-full flex flex-col items-center justify-center relative overflow-hidden text-white py-12 px-4 text-center">
+        <div className="cosmic-bg"></div>
+        <div className="floating-orb orb-1 opacity-20"></div>
+        <div className="floating-orb orb-2 opacity-25"></div>
+        <div className="floating-orb orb-3 opacity-15"></div>
+
+        <div className="glass-card-static p-8 max-w-md w-full flex flex-col items-center shadow-2xl z-10">
+          <div className="text-6xl mb-4">😢</div>
+          <h1 className="text-3xl font-extrabold text-white mb-2">Connection Lost</h1>
+          <p className="text-sm text-white/60 mb-8">
+            Your opponent has disconnected or left the game session.
+          </p>
+          <button
+            onClick={() => router.push("/memoryHome")}
+            className="btn-primary w-full py-3"
+          >
+            Return to Main Menu
+          </button>
+        </div>
       </div>
     );
   }
 
-  // FIXED: Improved waiting screen condition with better rematch handling
   const showWaitingScreen = !gameStarted || !opponentJoined;
 
   if (showWaitingScreen) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white text-center">
-        <h1 className="text-3xl font-bold mb-4">
-          {isHost ? "Waiting for Opponent..." : "Waiting for Game Start..."}
-        </h1>
-        <p className="text-lg">Room Code: <strong>{room}</strong></p>
-        
-        <div className="mt-4">
-          {isHost ? (
-            <div>
-              <p className="text-sm opacity-90 mb-2">Share this code with a friend — the game will start when they join.</p>
-              {opponentJoined && (
-                <p className="text-green-300 animate-pulse">✅ Opponent joined! Starting game...</p>
-              )}
-            </div>
-          ) : (
-            <div>
-              <p className="text-sm opacity-90 mb-2">Waiting for host to start the game...</p>
-              <div className="animate-pulse">🎮</div>
-            </div>
-          )}
+      <div className="min-h-screen w-full flex flex-col items-center justify-center relative overflow-hidden text-white py-12 px-4 text-center">
+        <div className="cosmic-bg"></div>
+        <div className="floating-orb orb-1 opacity-20"></div>
+        <div className="floating-orb orb-2 opacity-25"></div>
+        <div className="floating-orb orb-3 opacity-15"></div>
+
+        {/* Connection status badge */}
+        <div className="absolute top-6 right-6 z-20 flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full backdrop-blur-md">
+          <span className={`status-dot ${connectionStatus === 'connected' ? 'connected' : 'connecting'}`}></span>
+          <span className="text-xs text-white/70 font-semibold">
+            Status: {connectionStatus}
+          </span>
         </div>
 
-        {/* Connection status indicator */}
-        <div className="flex items-center gap-2 mt-4 text-sm">
-          <div className={`w-2 h-2 rounded-full ${
-            connectionStatus === 'connected' ? 'bg-green-500 animate-pulse' :
-            connectionStatus === 'connecting' ? 'bg-yellow-500' :
-            'bg-red-500'
-          }`}></div>
-          <span>Status: {connectionStatus}</span>
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card-static p-8 max-w-md w-full flex flex-col items-center shadow-2xl z-10"
+        >
+          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white mb-2">
+            {isHost ? "Waiting for Opponent" : "Waiting for Host"}
+          </h1>
+          <p className="text-white/60 text-sm mb-6">
+            {isHost ? "Send the code below to your friend to join the match." : "The match will start as soon as the host initializes the board."}
+          </p>
 
-        <button onClick={() => router.push("/memoryHome")} className="mt-6 text-white/80 hover:text-white">
-          ← Exit
-        </button>
+          <div className="flex flex-col items-center gap-3 w-full mb-6">
+            <span className="text-xs font-bold uppercase tracking-wider text-white/40">Lobby Code</span>
+            <div className="flex items-center gap-2 w-full justify-center">
+              <div className="room-code">{room}</div>
+              <button
+                onClick={copyToClipboard}
+                className="btn-secondary p-3 flex items-center justify-center aspect-square text-base relative"
+                title="Copy code to clipboard"
+              >
+                {copied ? "✅" : "📋"}
+              </button>
+            </div>
+            {copied && <p className="text-xs text-emerald-400 font-bold animate-pulse mt-1">Code copied to clipboard!</p>}
+          </div>
+
+          <div className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 mb-6">
+            {isHost ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="pulse-dots mb-1">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                <p className="text-xs text-white/60">Lobby is public. Ready to receive connections...</p>
+                {opponentJoined && (
+                  <p className="text-xs text-emerald-400 font-bold animate-pulse">Opponent joined! Syncing decks...</p>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <div className="pulse-dots mb-1">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                <p className="text-xs text-white/60">Lobby connection established. Waiting for host to build card board...</p>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => router.push("/memoryHome")}
+            className="btn-danger w-full py-3"
+          >
+            Cancel & Exit Lobby
+          </button>
+        </motion.div>
       </div>
     );
   }

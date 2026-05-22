@@ -521,126 +521,20 @@ export default function MemoryMatch({
         if (prev.includes(data.flippedIndex) || matchedIds.has(cards[data.flippedIndex]?.uuid)) {
           return prev;
         }
-        const newFlipped = [...prev, data.flippedIndex];
-        
-        // FIXED: Automatically check for match when opponent flips second card
-        if (newFlipped.length === 2) {
-          setTimeout(() => {
-            handleOpponentMatchCheck(newFlipped);
-          }, 500);
-        }
-        
-        return newFlipped;
+        return [...prev, data.flippedIndex];
       });
 
-      flipSound.current?.play();
-    };
-
-    channel.bind("server-card-flip", handleServerCardFlip);
-    return () => channel.unbind("server-card-flip", handleServerCardFlip);
-  }, [mode, channel, userId, cards, matchedIds]);
-
-  //UseEffect to batch opponent card flips
-  useEffect(() => {
-    if (mode !== "online" || !channel) return;
-
-    let flipBuffer = [];
-    let flipTimeout;
-
-    const handleServerCardFlip = (data) => {
-      if (data.senderId === userId) return;
-      
-      console.log("[MemoryMatch] server-card-flip received:", data.flippedIndex);
-      
-      flipBuffer.push(data.flippedIndex);
-      
-      // Clear previous timeout
-      if (flipTimeout) clearTimeout(flipTimeout);
-      
-      // Batch flips to prevent rapid updates
-      flipTimeout = setTimeout(() => {
-        setFlipped(prev => {
-          const newFlipped = [...prev];
-          for (const index of flipBuffer) {
-            if (!newFlipped.includes(index) && !matchedIds.has(cards[index]?.uuid)) {
-              newFlipped.push(index);
-            }
-          }
-          flipBuffer = [];
-          
-          // Auto-check for match if opponent flipped second card
-          if (newFlipped.length === 2) {
-            setTimeout(() => {
-              handleOpponentMatchCheck(newFlipped);
-            }, LOCAL_FLIP_DURATION + 200);
-          }
-          
-          return newFlipped;
-        });
-
-        flipSound.current?.play();
-      }, 100); // Small delay to batch multiple flips
+      if (flipSound.current) {
+        flipSound.current.currentTime = 0;
+        flipSound.current.play().catch(() => {});
+      }
     };
 
     channel.bind("server-card-flip", handleServerCardFlip);
     return () => {
       channel.unbind("server-card-flip", handleServerCardFlip);
-      if (flipTimeout) clearTimeout(flipTimeout);
     };
   }, [mode, channel, userId, cards, matchedIds]);
-
-  // FIXED: Separate function for opponent's match checking
-  const handleOpponentMatchCheck = (flippedIndices) => {
-    const [i1, i2] = flippedIndices;
-
-    if (i1 == null || i2 == null || i1 === i2) {
-      setTimeout(() => {
-        setFlipped([]);
-      }, ONLINE_FLIP_DURATION);
-      return;
-    }
-
-    const c1 = cards[i1], c2 = cards[i2];
-
-    if (!c1 || !c2) {
-      setTimeout(() => {
-        setFlipped([]);
-      }, ONLINE_FLIP_DURATION);
-      return;
-    }
-
-    const isMatch = c1?.emoji === c2?.emoji;
-
-    if (isMatch) {
-      setMatchedIds((prev) => {
-        const ns = new Set(prev);
-        ns.add(c1.uuid);
-        ns.add(c2.uuid);
-        return ns;
-      });
-
-      setFlipped([]);
-      matchSound.current?.play();
-
-      // Update scores for opponent
-      const opponentId = Object.keys(onlineScores).find(id => id !== userId);
-      if (opponentId) {
-        const newScores = {
-          ...onlineScores,
-          [opponentId]: (onlineScores[opponentId] || 0) + 1
-        };
-        setOnlineScores(newScores);
-      }
-    } else {
-      setTimeout(() => {
-        setFlipped([]);
-        mismatchSound.current?.play();
-        
-        // It becomes our turn after opponent's mismatch
-        setIsMyTurn(true);
-      }, ONLINE_MATCH_CHECK_DELAY);
-    }
-  };
 
   // FIXED: Match checking for current player
   const handleMatchCheck = (flippedIndices) => {
@@ -781,11 +675,18 @@ export default function MemoryMatch({
       console.log("[MemoryMatch] server-card-match received:", data.matchedIds);
       setMatchedIds(new Set(data.matchedIds || []));
       setMoves(data.moves || 0);
-      matchSound.current?.play();
+      setFlipped([]); // Clear flipped state when opponent matches
+      
+      if (matchSound.current) {
+        matchSound.current.currentTime = 0;
+        matchSound.current.play().catch(() => {});
+      }
     };
 
     channel.bind("server-card-match", handleServerCardMatch);
-    return () => channel.unbind("server-card-match", handleServerCardMatch);
+    return () => {
+      channel.unbind("server-card-match", handleServerCardMatch);
+    };
   }, [mode, channel, userId]);
 
   // NEW: Handle server-sent turn change events
@@ -798,11 +699,18 @@ export default function MemoryMatch({
       console.log("[MemoryMatch] server-turn-change received");
       setIsMyTurn(true);
       setDisabled(false);
-      setFlipped([]); // Clear any flipped cards when turn changes
+      setFlipped([]); // Clear any flipped cards (flips them back)
+      
+      if (mismatchSound.current) {
+        mismatchSound.current.currentTime = 0;
+        mismatchSound.current.play().catch(() => {});
+      }
     };
 
     channel.bind("server-turn-change", handleServerTurnChange);
-    return () => channel.unbind("server-turn-change", handleServerTurnChange);
+    return () => {
+      channel.unbind("server-turn-change", handleServerTurnChange);
+    };
   }, [mode, channel, userId]);
 
   // NEW: Handle server-sent score update events

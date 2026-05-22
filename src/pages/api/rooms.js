@@ -1,8 +1,11 @@
 // pages/api/rooms.js
 import { pusherServer } from '../../lib/pusher-server';
 
-// In-memory store for rooms
-const rooms = new Map();
+// In-memory store for rooms (cached on global to survive Next.js development hot-reloads)
+let rooms = global.rooms;
+if (!rooms) {
+  rooms = global.rooms = new Map();
+}
 
 // Shuffle function for creating decks
 function shuffle(array) {
@@ -93,12 +96,31 @@ export default async function handler(req, res) { // ADDED async here
       }
       
       room.players.push(userId);
+      
+      // Auto-start game and create deck when 2nd player joins
+      const pairsCount = 8; // Easy mode by default
+      const chosen = EMOJIS.slice(0, pairsCount);
+      const pairEmojis = shuffle([...chosen, ...chosen]);
+      const deck = pairEmojis.map((emoji, idx) => ({
+        id: idx,
+        emoji,
+        uuid: Math.random().toString(36).slice(2, 9) + Date.now().toString(36),
+      }));
+      
+      room.deck = deck;
+      room.started = true;
       rooms.set(roomCode, room);
 
       console.log(`[API rooms] User ${userId} joined room ${roomCode}. Players:`, room.players);
 
       // Notify all clients in the room
       try {
+        await pusherServer.trigger(`room-${roomCode}`, 'server-deck-ready', {
+          deck,
+          hostId: room.host,
+          room: roomCode
+        });
+        
         await pusherServer.trigger(`room-${roomCode}`, 'client-player-joined', {
           playerId: userId,
           room: roomCode
@@ -114,7 +136,7 @@ export default async function handler(req, res) { // ADDED async here
       });
     }
 
-    // Start game and create deck
+    // Start game and create deck (fallback/re-sync if needed)
     if (action === 'start-game') {
       const room = rooms.get(roomCode);
       
@@ -132,33 +154,38 @@ export default async function handler(req, res) { // ADDED async here
       
       console.log(`[API rooms] Starting game for room ${roomCode} with ${room.players.length} players`);
       
-      // Create deck (8 pairs for easy mode)
-      const pairsCount = 8; // Easy mode by default
-      const chosen = EMOJIS.slice(0, pairsCount);
-      const pairEmojis = shuffle([...chosen, ...chosen]);
-      const deck = pairEmojis.map((emoji, idx) => ({
-        id: idx,
-        emoji,
-        uuid: Math.random().toString(36).slice(2, 9) + Date.now().toString(36),
-      }));
-      
-      // Store deck in room
-      room.deck = deck;
-      room.started = true;
-      rooms.set(roomCode, room);
-      
-      console.log(`[API rooms] Created deck with ${deck.length} cards for room ${roomCode}`);
-      
-      // Notify all players via server event
-      try {
-        await pusherServer.trigger(`room-${roomCode}`, 'server-deck-ready', {
-          deck,
-          hostId,
-          room: roomCode
-        });
-        console.log(`[API rooms] Successfully sent server-deck-ready event for room ${roomCode}`);
-      } catch (error) {
-        console.error(`[API rooms] Failed to send server-deck-ready event:`, error);
+      let deck = room.deck;
+      if (!deck) {
+        // Create deck (8 pairs for easy mode)
+        const pairsCount = 8; // Easy mode by default
+        const chosen = EMOJIS.slice(0, pairsCount);
+        const pairEmojis = shuffle([...chosen, ...chosen]);
+        deck = pairEmojis.map((emoji, idx) => ({
+          id: idx,
+          emoji,
+          uuid: Math.random().toString(36).slice(2, 9) + Date.now().toString(36),
+        }));
+        
+        // Store deck in room
+        room.deck = deck;
+        room.started = true;
+        rooms.set(roomCode, room);
+        
+        console.log(`[API rooms] Created deck with ${deck.length} cards for room ${roomCode}`);
+        
+        // Notify all players via server event
+        try {
+          await pusherServer.trigger(`room-${roomCode}`, 'server-deck-ready', {
+            deck,
+            hostId,
+            room: roomCode
+          });
+          console.log(`[API rooms] Successfully sent server-deck-ready event for room ${roomCode}`);
+        } catch (error) {
+          console.error(`[API rooms] Failed to send server-deck-ready event:`, error);
+        }
+      } else {
+        console.log(`[API rooms] Room already has deck, returning existing deck`);
       }
       
       return res.json({ 

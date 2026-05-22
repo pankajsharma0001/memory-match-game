@@ -19,6 +19,8 @@ export default function OnlineGame() {
   useEffect(() => {
     if (!room || !userId) return;
 
+    let activeChannel = null;
+
     const initializePusher = async () => {
       try {
         const pusher = getPusherClient();
@@ -42,6 +44,7 @@ export default function OnlineGame() {
 
         // Subscribe to room channel
         const roomChannel = pusher.subscribe(`room-${room}`);
+        activeChannel = roomChannel;
         
         roomChannel.bind('pusher:subscription_succeeded', () => {
           console.log('✅ Subscribed to room:', room);
@@ -60,13 +63,6 @@ export default function OnlineGame() {
         roomChannel.bind('client-player-left', (data) => {
           console.log('👋 Player left:', data);
           setOpponentDisconnected(true);
-        });
-
-        // Handle turn changes
-        roomChannel.bind('client-turn-change', (data) => {
-          if (data.senderId !== userId) {
-            setIsMyTurn(true);
-          }
         });
 
         setChannel(roomChannel);
@@ -103,9 +99,12 @@ export default function OnlineGame() {
     initializePusher();
 
     return () => {
-      if (channel) {
-        channel.unbind_all();
-        channel.unsubscribe();
+      if (activeChannel) {
+        activeChannel.unbind_all();
+        const pusher = getPusherClient();
+        if (pusher) {
+          pusher.unsubscribe(`room-${room}`);
+        }
       }
     };
   }, [room, userId]);

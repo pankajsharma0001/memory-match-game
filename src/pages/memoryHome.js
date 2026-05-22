@@ -74,20 +74,6 @@ export default function MemoryHome() {
               className="mb-8 flex flex-col items-center"
               variants={itemVariants}
             >
-              <motion.span
-                className="text-7xl md:text-8xl mb-4 inline-block drop-shadow-[0_0_35px_rgba(139,92,246,0.6)]"
-                animate={{
-                  y: [0, -10, 0],
-                  scale: [1, 1.03, 1]
-                }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-              >
-                🧠
-              </motion.span>
               <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight neon-text-gradient drop-shadow-[0_2px_15px_rgba(0,0,0,0.5)]">
                 Memory Match
               </h1>

@@ -55,11 +55,11 @@ export default function MemoryMatch({
 }) {
   const router = useRouter();
   
-  const LOCAL_FLIP_DURATION = 500; // Normal speed for single/two player
-  const LOCAL_MATCH_CHECK_DELAY = 600; // Normal delay for single/two player
+  const LOCAL_FLIP_DURATION = 350; // Snappy speed for single/two player
+  const LOCAL_MATCH_CHECK_DELAY = 400; // Shortened delay on mismatch
 
-  const ONLINE_FLIP_DURATION = 600; // Slower for online mode
-  const ONLINE_MATCH_CHECK_DELAY = 1000; // Longer delay for online mode
+  const ONLINE_FLIP_DURATION = 450; // Snappy speed for online mode
+  const ONLINE_MATCH_CHECK_DELAY = 600; // Shortened delay on mismatch
 
   // Audio references
   const bgMusic = useRef(null);
@@ -348,12 +348,34 @@ export default function MemoryMatch({
       stopTimer();
       winSound.current?.play();
 
+      // Premium High-Energy Confetti Celebration!
+      // Initial huge center burst
       confetti({
-        particleCount: 150,
+        particleCount: 120,
         spread: 80,
         origin: { y: 0.6 },
         colors: ["#06b6d4", "#8b5cf6", "#f43f5e", "#f59e0b", "#10b981"]
       });
+
+      // Side cannons spray over 1.5 seconds for active game feedback
+      const end = Date.now() + 1500;
+      const interval = setInterval(() => {
+        if (Date.now() > end) return clearInterval(interval);
+        confetti({
+          particleCount: 30,
+          angle: 60,
+          spread: 60,
+          origin: { x: 0, y: 0.8 },
+          colors: ["#06b6d4", "#8b5cf6", "#f43f5e", "#f59e0b", "#10b981"]
+        });
+        confetti({
+          particleCount: 30,
+          angle: 120,
+          spread: 60,
+          origin: { x: 1, y: 0.8 },
+          colors: ["#06b6d4", "#8b5cf6", "#f43f5e", "#f59e0b", "#10b981"]
+        });
+      }, 150);
 
       // Two Player Mode
       if (mode === "two") {
@@ -380,7 +402,7 @@ export default function MemoryMatch({
             localStorage.setItem("memory_best", JSON.stringify(updated));
           }
         }
-        setTimeout(() => setShowNamePrompt(true), 800);
+        setTimeout(() => setShowNamePrompt(true), 300);
       }
 
       // Online Multiplayer Mode
@@ -427,7 +449,7 @@ export default function MemoryMatch({
         }
       }
       
-      setTimeout(() => setShowModal(true), 1000);
+      setTimeout(() => setShowModal(true), 400);
     }
   }, [matchedIds, cards, moves, seconds]);
 
@@ -508,7 +530,7 @@ export default function MemoryMatch({
       
       // For online mode, only the current player should validate matches
       if (mode === "online") {
-        setTimeout(() => handleMatchCheck(newFlipped), ONLINE_FLIP_DURATION + 100);
+        setTimeout(() => handleMatchCheck(newFlipped), ONLINE_FLIP_DURATION);
       } else {
         // For local modes, validate with delay
         setTimeout(() => handleMatchCheck(newFlipped), LOCAL_FLIP_DURATION);
@@ -572,6 +594,12 @@ export default function MemoryMatch({
     setMoves((m) => m + 1);
 
     if (isMatch) {
+      // Play match sound immediately
+      if (matchSound.current) {
+        matchSound.current.currentTime = 0;
+        matchSound.current.play().catch(() => {});
+      }
+
       setTimeout(() => {
         setMatchedIds((prev) => {
           const ns = new Set(prev);
@@ -581,7 +609,6 @@ export default function MemoryMatch({
         });
 
         setFlipped([]);
-        matchSound.current?.play();
         setDisabled(false);
 
         // Update scores
@@ -636,13 +663,18 @@ export default function MemoryMatch({
             [currentPlayer]: prev[currentPlayer] + 1
           }));
         }
-      }, 300);
+      }, 150);
     } else {
+      // Play mismatch sound immediately
+      if (mismatchSound.current) {
+        mismatchSound.current.currentTime = 0;
+        mismatchSound.current.play().catch(() => {});
+      }
+
       const mismatchDelay = mode === "online" ? ONLINE_MATCH_CHECK_DELAY : LOCAL_MATCH_CHECK_DELAY;
 
       setTimeout(() => {
         setFlipped([]);
-        mismatchSound.current?.play();
 
         // Swap turns for 2-player local
         if (mode === "two") {
@@ -847,11 +879,30 @@ const startRematch = () => {
     return () => channel.unbind("server-rematch-request", handleServerRematchRequest);
   }, [mode, channel, userId, rematchRequested]);
 
+  // Handle tab close or page exit to notify opponent
+  useEffect(() => {
+    if (mode !== "online" || !channel) return;
+
+    const handleBeforeUnload = () => {
+      onSendGameEvent("player-left", { userId });
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      // Also notify when component itself unmounts
+      onSendGameEvent("player-left", { userId });
+    };
+  }, [mode, channel, userId]);
+
   const handleBack = () => {
     try {
       bgMusic.current.pause();
       bgMusic.current.currentTime = 0;
     } catch (e) {}
+    if (mode === "online") {
+      onSendGameEvent("player-left", { userId });
+    }
     onBack();
   };
 
